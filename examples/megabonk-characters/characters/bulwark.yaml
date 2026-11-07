@@ -1,0 +1,80 @@
+format: um-megabonk-character
+format_version: 1
+id: 1842201002
+author: local
+asset_bundle: bulwark
+name: Bulwark
+description: A slow front-liner with more health and armor. Numbers are untested in Megabonk.
+collider:
+  height: 4.4
+  width: 1.1
+coolness: 3
+difficulty: 1
+appearance:
+  prefab: Assets/bulwark/bulwark.prefab
+  icon: icons/bulwark-character.png
+  theme_song: ''
+  footsteps: []
+  clips:
+  - Idle
+  - Run
+  - Jump
+  - Fall
+  - Grind
+  animator_bools:
+  - grounded
+  - moving
+  - jumping
+  - grinding
+passive:
+  effect: Reinforced
+  name: Plate Oath
+  description: Uses the game's Reinforced passive under this name. What Reinforced does was not re-measured here.
+  icon: icons/bulwark-passive.png
+weapon:
+  name: Ram
+  description: One slow heavy hit. Damage numbers are passed through and were not playtested.
+  icon: icons/bulwark-weapon.png
+  attack_prefab: Assets/bulwark/ram_attack.prefab
+  attack_speed: 1.6
+  damage: 22
+  knockback: 1.8
+  size: 1.3
+  bounces: 0
+  projectiles: 1
+  duration: 0.8
+  projectile_speed: 0.9
+  crit_chance: 0
+  crit_damage: 0
+  extra_stats: []
+  upgrades:
+  - stat: DamageMultiplier
+    modify: Flat
+    amount: 4
+  - stat: KnockbackMultiplier
+    modify: Addition
+    amount: 0.2
+stats:
+- stat: Armor
+  modify: Addition
+  amount: 8
+- stat: MaxHealth
+  modify: Addition
+  amount: 25
+- stat: MoveSpeedMultiplier
+  modify: Addition
+  amount: -0.08
+category_ratios:
+  Offensive: 0.0
+  Defensive: 0.2765
+  Movement: 0.3056
+  Utility: 1.0
+  Difficulty: 0.0
+  Coolness: 0.625
+  'Null': 1.0
+skins:
+- name: Plate
+  description: Bulwark's default look. The material has to be built in Unity.
+  icon: icons/bulwark-skin.png
+  materials:
+  - Assets/bulwark/body.mat

@@ -1,0 +1,80 @@
+format: um-megabonk-character
+format_version: 1
+id: 1842201001
+author: local
+asset_bundle: lumen
+name: Lumen
+description: A lantern-bearer who trades health for reach. Numbers are untested in Megabonk.
+collider:
+  height: 3.6
+  width: 0.6
+coolness: 6
+difficulty: 2
+appearance:
+  prefab: Assets/lumen/lumen.prefab
+  icon: icons/lumen-character.png
+  theme_song: ''
+  footsteps: []
+  clips:
+  - Idle
+  - Run
+  - Jump
+  - Fall
+  - Grind
+  animator_bools:
+  - grounded
+  - moving
+  - jumping
+  - grinding
+passive:
+  effect: Float
+  name: Cinder Drift
+  description: Uses the game's Float passive under this name. The drift itself was not re-measured here.
+  icon: icons/lumen-passive.png
+weapon:
+  name: Ember Toss
+  description: Several light projectiles. Damage numbers are passed through and were not playtested.
+  icon: icons/lumen-weapon.png
+  attack_prefab: Assets/lumen/ember_attack.prefab
+  attack_speed: 0.55
+  damage: 6
+  knockback: 0.6
+  size: 0.9
+  bounces: 0
+  projectiles: 3
+  duration: 1
+  projectile_speed: 1.35
+  crit_chance: 0
+  crit_damage: 0
+  extra_stats: []
+  upgrades:
+  - stat: Projectiles
+    modify: Flat
+    amount: 1
+  - stat: DamageMultiplier
+    modify: Addition
+    amount: 1
+stats:
+- stat: PickupRange
+  modify: Addition
+  amount: 6
+- stat: MoveSpeedMultiplier
+  modify: Addition
+  amount: 0.04
+- stat: MaxHealth
+  modify: Addition
+  amount: -10
+category_ratios:
+  Offensive: 0.0
+  Defensive: 0.2765
+  Movement: 0.3056
+  Utility: 1.0
+  Difficulty: 0.0
+  Coolness: 0.625
+  'Null': 1.0
+skins:
+- name: Lantern
+  description: Lumen's default look. The material has to be built in Unity.
+  icon: icons/lumen-skin.png
+  materials:
+  - Assets/lumen/body.mat

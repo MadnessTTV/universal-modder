@@ -1,0 +1,287 @@
+"""Offline tests for `um megabonk`. No game, no Unity, no AssetBundle that the game could load."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+from PIL import Image
+
+from um.megabonk import (
+    CATEGORIES,
+    CHARACTERS,
+    MIN_BUNDLE_BYTES,
+    PASSIVES,
+    REQUIRED_WEAPON_STATS,
+    STATS,
+    WEAPONS,
+    MegabonkError,
+    catalog_text,
+    doctor,
+    import_icon,
+    install_pack,
+    new_character,
+    pack_character,
+    prerequisites_text,
+    uninstall,
+    validate_definition,
+    validate_loader_json,
+    load_yaml,
+)
+
+ROOT = Path(__file__).resolve().parents[1]
+EXAMPLES = ROOT / "examples" / "megabonk-characters" / "characters"
+
+
+def _unityfs(path: Path) -> None:
+    path.write_bytes(b"UnityFS" + b"\0" * MIN_BUNDLE_BYTES)
+
+
+def _game(tmp_path: Path, loader: bool = True) -> Path:
+    game = tmp_path / "Megabonk"
+    data = game / "Megabonk_Data"
+    (data / "il2cpp_data" / "Metadata").mkdir(parents=True)
+    (data / "il2cpp_data" / "Metadata" / "global-metadata.dat").write_bytes(b"metadata")
+    (data / "globalgamemanagers").write_bytes(b"\0" * 32 + b"2023.2.22f1\0")
+    (data / "app.info").write_text("Ved\nMegabonk\n", encoding="utf-8")
+    (game / "Megabonk.exe").write_bytes(b"MZ")
+    (game / "GameAssembly.dll").write_bytes(b"MZ")
+    (game / "BepInEx" / "plugins").mkdir(parents=True)
+    (game / "BepInEx" / "core").mkdir()
+    if loader:
+        plug = game / "BepInEx" / "plugins" / "CustomCharacterLoader"
+        plug.mkdir()
+        (plug / "CustomCharacterLoader.dll").write_bytes(b"MZ")
+    save = tmp_path / "LocalLow" / "Ved" / "Megabonk"
+    save.mkdir(parents=True)
+    (save / "progression.json").write_text("KEEP", encoding="utf-8")
+    return game
+
+
+def _pack(tmp_path: Path, yaml_name: str) -> Path:
+    out = tmp_path / "packs" / yaml_name
+    pack_character(EXAMPLES / f"{yaml_name}.yaml", out)
+    doc = json.loads((out / f"{yaml_name}.custom.json").read_text(encoding="utf-8"))
+    _unityfs(out / doc["character"]["assetBundleName"])
+    return out
+
+
+def test_catalog_matches_the_published_counts():
+    assert len(STATS) == 57
+    assert STATS["ExtraJumps"] == 46
+    assert STATS["ProjectileBounces"] == 45
+    assert list(STATS)[0] == "MaxHealth"
+    assert len(PASSIVES) == 21
+    assert PASSIVES["WallClimb"] == 8
+    assert PASSIVES["None"] == 9
+    assert PASSIVES["Float"] == 10
+    assert len(CATEGORIES) == 7
+    assert CHARACTERS[14] == "Amog"
+    assert WEAPONS[30] == "Scythe"
+    text = catalog_text()
+    assert "ExtraJumps" in text and "CritHappens" in text
+    pre = prerequisites_text()
+    assert "6.0.738" in pre and "1.4.1" in pre and "UnityFS" in pre
+    assert "not re-run" in pre.lower() or "Not re-run" in pre
+
+
+def test_three_example_characters_are_distinct_and_pack():
+    ids, effects, stat_lines, damages = set(), set(), set(), set()
+    icons = []
+    for path in sorted(EXAMPLES.glob("*.yaml")):
+        data = load_yaml(path)
+        errors, _warnings = validate_definition(data, path.parent)
+        assert errors == []
+        ids.add(data["id"])
+        effects.add(data["passive"]["effect"])
+        stat_lines.add(tuple((row["stat"], row["amount"]) for row in data["stats"]))
+        damages.add(data["weapon"]["damage"])
+        assert data["id"] >= 1000
+        assert not any(row["stat"] == "PickupRange" and row["amount"] >= 45 for row in data["stats"])
+        icons.append(path.parent / data["appearance"]["icon"])
+    assert len(ids) == len(effects) == len(stat_lines) == len(damages) == 3
+    blobs = [icon.read_bytes() for icon in icons]
+    assert len(set(blobs)) == 3
+    for icon in icons:
+        with Image.open(icon) as im:
+            assert im.format == "PNG" and im.size == (128, 128)
+
+
+def test_pack_json_has_the_loader_shape(tmp_path):
+    out = tmp_path / "lumen"
+    result = pack_character(EXAMPLES / "lumen.yaml", out)
+    doc = json.loads(result["json"].read_text(encoding="utf-8"))
+    errors, _warnings = validate_loader_json(doc)
+    assert errors == []
+    assert doc["version"] == "1.4.0"
+    assert doc["character"]["eCharacter"] == 1842201001
+    assert doc["character"]["themeSongPath"] == doc["character"]["themesongPath"] == ""
+    assert doc["character"]["statModifiers"][0] == {"stat": STATS["PickupRange"], "modifyType": 0, "modification": 6}
+    assert doc["passive"]["passive"] == PASSIVES["Float"]
+    assert doc["passive"]["passiveName"] == "Cinder Drift"
+    stats = {row["Stat"]: row["Value"] for row in doc["weapon"]["stats"]}
+    for name in REQUIRED_WEAPON_STATS:
+        assert STATS[name] in stats
+    assert stats[STATS["DamageMultiplier"]] == 6
+    assert stats[STATS["Projectiles"]] == 3
+    assert "clips" not in json.dumps(doc)
+    assert "grounded" not in json.dumps(doc)
+    assert not (out / "lumen").exists()
+    assert "Unity 2023.2.22f1" in (out / "BUNDLE.txt").read_text(encoding="utf-8")
+    flicker = json.loads((pack_character(EXAMPLES / "flicker.yaml", tmp_path / "flicker")["json"]).read_text(encoding="utf-8"))
+    flicker_stats = {row["Stat"] for row in flicker["weapon"]["stats"]}
+    assert STATS["Lifesteal"] in flicker_stats
+    assert flicker["passive"]["passive"] == PASSIVES["CritHappens"]
+
+
+def test_rejects_vanilla_ids_and_duplicate_weapon_stats(tmp_path):
+    path = tmp_path / "hero.yaml"
+    new_character(path, "Hero", "local", ident=1842201999)
+    data = load_yaml(path)
+    errors, _warnings = validate_definition(data, path.parent)
+    assert errors == []
+    data["id"] = 14
+    errors, _ = validate_definition(data, path.parent)
+    assert any("Amog" in e for e in errors)
+    data["id"] = 30
+    errors, _ = validate_definition(data, path.parent)
+    assert any("Scythe" in e for e in errors)
+    data["id"] = 1842201999
+    data["weapon"]["extra_stats"] = [{"stat": "DamageMultiplier", "amount": 1}]
+    errors, _ = validate_definition(data, path.parent)
+    assert any("twice" in e for e in errors)
+    data["weapon"]["extra_stats"] = []
+    data["stats"] = [{"stat": "PickupRange", "modify": "Flat", "amount": 45}]
+    _errors, warnings = validate_definition(data, path.parent)
+    assert any("45" in w for w in warnings)
+    data["passive"]["effect"] = None
+    errors, _ = validate_definition(data, path.parent)
+    assert any("quote" in e.lower() for e in errors)
+
+
+def test_import_icon_copies_a_png_and_rejects_other_files(tmp_path):
+    path = tmp_path / "hero.yaml"
+    new_character(path, "Hero", "local", ident=1842201888)
+    src = tmp_path / "face.png"
+    Image.new("RGBA", (32, 16), (10, 20, 30, 255)).save(src)
+    note = import_icon(path, src, "character", fit=128)
+    assert "128x128" not in note
+    data = load_yaml(path)
+    stored = tmp_path / data["appearance"]["icon"]
+    with Image.open(stored) as im:
+        assert im.size == (128, 128) and im.format == "PNG"
+    other = tmp_path / "face.jpg"
+    Image.new("RGB", (8, 8), (1, 2, 3)).save(other, "JPEG")
+    with pytest.raises(MegabonkError):
+        import_icon(path, other, "weapon")
+
+
+def test_install_refuses_a_missing_or_fake_bundle_and_leaves_the_game(tmp_path):
+    game = _game(tmp_path)
+    save = tmp_path / "LocalLow" / "Ved" / "Megabonk" / "progression.json"
+    out = tmp_path / "bare"
+    pack_character(EXAMPLES / "lumen.yaml", out)
+    before = list((game / "BepInEx" / "plugins").rglob("*"))
+    with pytest.raises(MegabonkError, match="missing AssetBundle"):
+        install_pack(out, game)
+    assert list((game / "BepInEx" / "plugins").rglob("*")) == before
+    assert save.read_text(encoding="utf-8") == "KEEP"
+    (out / "lumen").write_text("not a bundle", encoding="utf-8")
+    with pytest.raises(MegabonkError, match="UnityFS"):
+        install_pack(out, game)
+    assert not (game / "BepInEx" / "plugins" / "CustomCharacters").exists()
+    assert save.read_text(encoding="utf-8") == "KEEP"
+
+
+def test_install_and_uninstall_are_limited_to_the_manifest(tmp_path):
+    game = _game(tmp_path)
+    save = tmp_path / "LocalLow" / "Ved" / "Megabonk" / "progression.json"
+    chars = game / "BepInEx" / "plugins" / "CustomCharacters"
+    chars.mkdir()
+    existing = chars / "lumen.custom.json"
+    existing.write_text("original-json", encoding="utf-8")
+    (chars / "someone-else.custom.json").write_text('{"character":{"eCharacter":1842201777}}', encoding="utf-8")
+    lumen = _pack(tmp_path, "lumen")
+    bulwark = _pack(tmp_path, "bulwark")
+    installed = install_pack(lumen, game)
+    assert installed["in_game_verified"] is False
+    assert existing.read_text(encoding="utf-8") != "original-json"
+    install_pack(bulwark, game)
+    foreign = chars / "foreign.custom.json"
+    foreign.write_text(json.dumps({"character": {"eCharacter": 1842201003}}), encoding="utf-8")
+    flicker = _pack(tmp_path, "flicker")
+    with pytest.raises(MegabonkError, match="already used"):
+        install_pack(flicker, game)
+    assert foreign.read_text(encoding="utf-8").startswith("{")
+    uninstall(game, ident=1842201001)
+    assert existing.read_text(encoding="utf-8") == "original-json"
+    assert (chars / "bulwark.custom.json").is_file()
+    assert (chars / "someone-else.custom.json").is_file()
+    assert not (chars / "lumen").exists()
+    uninstall(game)
+    assert not (chars / "bulwark.custom.json").exists()
+    assert not (chars / "bulwark").exists()
+    assert (chars / "someone-else.custom.json").is_file()
+    assert (game / "BepInEx" / "plugins" / "CustomCharacterLoader" / "CustomCharacterLoader.dll").is_file()
+    assert save.read_text(encoding="utf-8") == "KEEP"
+    assert not (game / "BepInEx" / "um-megabonk" / "install.json").exists()
+
+
+def test_reinstall_of_our_character_is_allowed(tmp_path):
+    game = _game(tmp_path)
+    lumen = _pack(tmp_path, "lumen")
+    install_pack(lumen, game)
+    again = install_pack(lumen, game)
+    assert again["id"] == 1842201001
+
+
+def test_uninstall_leaves_a_file_that_changed(tmp_path):
+    game = _game(tmp_path)
+    install_pack(_pack(tmp_path, "lumen"), game)
+    target = game / "BepInEx" / "plugins" / "CustomCharacters" / "lumen.custom.json"
+    target.write_text("edited by hand", encoding="utf-8")
+    bundle = game / "BepInEx" / "plugins" / "CustomCharacters" / "lumen"
+    with pytest.raises(MegabonkError, match="changed after install"):
+        uninstall(game)
+    assert target.read_text(encoding="utf-8") == "edited by hand"
+    assert bundle.is_file()
+    notes = uninstall(game, force=True)
+    assert any("lumen.custom.json" in note for note in notes)
+    assert not target.exists()
+
+
+def test_install_refuses_anticheat_and_a_missing_loader_is_only_a_doctor_blocker(tmp_path):
+    game = _game(tmp_path)
+    (game / "EasyAntiCheat").mkdir()
+    with pytest.raises(MegabonkError, match="anti-cheat"):
+        install_pack(_pack(tmp_path, "lumen"), game)
+    assert not (game / "BepInEx" / "plugins" / "CustomCharacters" / "lumen.custom.json").exists()
+    bare = _game(tmp_path / "bare", loader=False)
+    report = doctor(bare)
+    assert any("loader" in b.lower() for b in report["blockers"])
+    assert report["unity_version"] == "2023.2.22f1"
+    assert report["looks_like_megabonk"] is True
+    full = doctor(game)
+    assert any("anti-cheat" in b for b in full["blockers"])
+
+
+def test_doctor_on_the_prepared_install_has_no_play_blockers_other_than_honesty(tmp_path):
+    game = _game(tmp_path)
+    install_pack(_pack(tmp_path, "bulwark"), game)
+    report = doctor(game)
+    assert report["blockers"] == []
+    assert report["characters"][0]["unityfs"] is True
+    assert report["characters"][0]["id"] == 1842201002
+    assert any("not run" in note.lower() or "In-game" in note for note in report["notes"])
+
+
+def test_doctor_on_an_empty_folder_lists_the_missing_files(tmp_path):
+    report = doctor(tmp_path / "nope")
+    assert report["blockers"]
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    report = doctor(empty)
+    joined = " ".join(report["blockers"]).lower()
+    assert "gameassembly" in joined
+    assert "global-metadata" in joined
+    assert "bepinex" in joined

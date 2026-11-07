@@ -16,6 +16,7 @@ Subcommands (see `um --help`):
   fastfile  Call of Duty 4 / World at War: list and dump the rawfiles (GSC, CSC, menus) in your own .ff zones
   iwi       Call of Duty 4 / World at War: PNG to IWI v6 textures (DXT1/DXT5) and back
   weapon    Call of Duty 4 / World at War: read, edit, clone and diff weapon files
+  megabonk  Megabonk character definitions for the community custom-character loader
 """
 
 __version__ = "0.2.0"
