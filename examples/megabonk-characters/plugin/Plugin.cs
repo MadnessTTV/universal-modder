@@ -9,7 +9,7 @@ using HarmonyLib;
 
 namespace UmMegabonkStudio
 {
-    [BepInPlugin(Plugin.Guid, "Megabonk Studio", "0.3.5")]
+    [BepInPlugin(Plugin.Guid, "Megabonk Studio", "0.3.6")]
     public class Plugin : BasePlugin
     {
         public const string Guid = "um.megabonk.studio";
@@ -24,7 +24,7 @@ namespace UmMegabonkStudio
             var dir = Path.Combine(Paths.PluginPath, "UmMegabonkStudio");
             Directory.CreateDirectory(dir);
             JsonPath = Path.Combine(dir, "characters.json");
-            Info("Megabonk Studio 0.3.5. Drafts: " + JsonPath);
+            Info("Megabonk Studio 0.3.6. Drafts: " + JsonPath);
             Info("F7 is the in-game editor key. OnGUI has not run yet. Leaderboard uploads should stay Off. This plugin does not change that switch and does not write the save folder.");
             var harmony = new Harmony(Guid);
             InputGuard.Install(harmony);

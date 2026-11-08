@@ -648,7 +648,14 @@ def test_appearance_edit_keeps_combat_fields_and_presets_reject_junk():
     assert "GUILayoutUtility" not in window and "backgroundColor" not in window
     assert "TextField" not in window and "TextArea" not in window
     assert "WarnOnce" in window
-    assert "new Camera" not in window and "new RenderTexture" not in window
+    preview = (ROOT / "examples" / "megabonk-characters" / "plugin" / "ModelPreview.cs").read_text(encoding="utf-8")
+    assert "AddComponent<Camera>" in preview
+    assert "new RenderTexture(512, 512, 16, RenderTextureFormat.ARGB32)" in preview
+    assert "enabled = false" in preview
+    assert "targetTexture" in preview
+    assert "Release()" in preview
+    assert "SetCharacter" not in preview and "PlayerInventory" not in preview
+    assert "sharedMaterials" in preview
     tool = (ROOT / "examples" / "megabonk-characters" / "plugin" / "tools" / "ListSignature" / "Program.cs").read_text(encoding="utf-8")
     assert "CTOR" in tool and "DecodeMethodSignature" in tool
     assert "exact type name" in tool

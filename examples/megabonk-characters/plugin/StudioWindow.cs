@@ -111,6 +111,7 @@ namespace UmMegabonkStudio
             else
             {
                 _focus = null;
+                ModelPreview.Dispose();
                 ReleaseInput();
                 Plugin.Info("Studio editor closed.");
             }
@@ -129,6 +130,7 @@ namespace UmMegabonkStudio
                 try { GUILayout.EndArea(); } catch (Exception) { }
             }
             _focus = null;
+            ModelPreview.Dispose();
             ReleaseInput();
             _open = false;
         }
@@ -169,11 +171,13 @@ namespace UmMegabonkStudio
             }
             if (!_open)
             {
+                ModelPreview.Dispose();
                 if (_wasOpen) ReleaseInput();
                 _wasOpen = false;
                 _focus = null;
                 return;
             }
+            if (_session.Screen != "look") ModelPreview.Dispose();
             _wasOpen = true;
             Phase = "keys";
             CaptureTyping(ev);
@@ -730,6 +734,8 @@ namespace UmMegabonkStudio
             }
             GUILayout.Label("Type a hex color. Six digits, with or without #.", _label);
             DrawBuffer("hex", 64f);
+            if (GUILayout.Button("Turn left", _button)) ModelPreview.Turn(-30f);
+            if (GUILayout.Button("Turn right", _button)) ModelPreview.Turn(30f);
             if (GUILayout.Button("Use typed color", _button))
             {
                 var hex = AppearanceBook.NormalizeHex(Buf("hex").Text);
@@ -789,28 +795,17 @@ namespace UmMegabonkStudio
             Phase = "preview";
             try
             {
-                if (!TryModelPreview())
-                {
-                    DrawSwatch();
-                    if (!_previewNoted)
-                    {
-                        _previewNoted = true;
-                        Plugin.Info("Preview phase=swatch. No camera is created. Camera.Render, RenderTexture constructors, Behaviour.enabled, and GameObject.AddComponent are unconfirmed.");
-                    }
-                }
+                ModelPreview.Ensure(_lookBody, _lookTint, _lookPaint);
+                float side = Mathf.Clamp(_rect.width * 0.42f, 180f, 420f);
+                ModelPreview.Draw(new Rect(8f, 8f, side, side));
+                GUILayout.Label("Isolated preview of " + _lookBody + ". It is not saved until you apply. Not part of the level.", _label);
             }
             catch (Exception ex)
             {
+                ModelPreview.Dispose();
                 Plugin.WarnOnce("preview", ex);
-                try { DrawSwatch(); } catch (Exception) { }
+                DrawSwatch();
             }
-        }
-
-        static bool TryModelPreview()
-        {
-            // The truncated dump did not decode these signatures. Unknown is not the same as absent.
-            // Calling a guessed constructor can hit the stripped-method failure, so this stays off.
-            return false;
         }
 
         static void DrawSwatch()
