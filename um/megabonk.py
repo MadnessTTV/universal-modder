@@ -1215,11 +1215,11 @@ def uninstall(game: Path, ident: int | None = None, force: bool = False) -> list
 
 def _studio(a):
     from um.megabonk_studio import (
-        add_character, format_studio, interpret_model_message, load_studio, save_studio, set_character,
-        starter_file, validate_studio,
+        add_character, append_character, format_studio, interpret_model_message, load_studio, save_studio,
+        set_character, starter_file, validate_studio,
     )
     if not getattr(a, "studio_cmd", None):
-        die("usage: um megabonk studio init|validate|add|set|review-model ...")
+        die("usage: um megabonk studio init|validate|add|set|append|review-model ...")
     path = Path(a.path)
     if a.studio_cmd == "init":
         if path.exists() and not a.force:
@@ -1255,6 +1255,11 @@ def _studio(a):
         )
         save_studio(path, data)
         print(format_studio(data))
+    elif a.studio_cmd == "append":
+        row = json.loads(Path(a.character).read_text(encoding="utf-8"))
+        data = append_character(data, row)
+        save_studio(path, data)
+        print(f"appended {row.get('name')} id={row.get('id')}")
     else:
         die("unknown studio command")
 
@@ -1413,6 +1418,10 @@ def register(sub):
     s.add_argument("--tint", help="#RRGGBB or empty")
     s.add_argument("--clear-stats", action="store_true")
     s.add_argument("--stat", action="append", default=[], help="Stat:Modify:amount, repeatable")
+    s.set_defaults(func=main)
+    s = ss.add_parser("append", help="add one character object when its id is free")
+    s.add_argument("path")
+    s.add_argument("character", help="a single character json object, not a studio file")
     s.set_defaults(func=main)
     s = ss.add_parser("review-model", help="check a saved model reply without contacting a server")
     s.add_argument("path")

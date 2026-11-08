@@ -149,6 +149,11 @@ def validate_studio(data: dict) -> tuple[list[str], list[str]]:
         tint = row.get("tint", "")
         if tint not in ("", None) and (not isinstance(tint, str) or not TINT.match(tint)):
             errors.append(f"{where}.tint must be empty or #RRGGBB")
+        paint = row.get("paint", False)
+        if paint not in (True, False, None):
+            errors.append(f"{where}.paint must be true or false")
+        elif paint and not (isinstance(tint, str) and TINT.match(tint)):
+            errors.append(f"{where}.paint requires tint #RRGGBB")
         try:
             _optional(_BY_PASSIVE, row.get("passive", ""), f"{where}.passive")
             _optional(_BY_WEAPON, row.get("weapon", ""), f"{where}.weapon")
@@ -283,7 +288,7 @@ def _apply_changes(data: dict, row: dict, changes: dict) -> dict:
 
 
 CHARACTER_KEYS = {
-    "name", "description", "author", "appearance", "tint", "passive", "weapon", "portrait", "stats",
+    "name", "description", "author", "appearance", "tint", "paint", "passive", "weapon", "portrait", "stats",
 }
 STAT_KEYS = {"stat", "modify", "amount"}
 MESSAGE_KEYS = {"type", "questions", "character"}
@@ -330,6 +335,11 @@ def _draft_errors(row: dict) -> list[str]:
     tint = row.get("tint", "")
     if tint not in ("", None) and (not isinstance(tint, str) or not TINT.match(tint)):
         errors.append("tint must be empty or #RRGGBB")
+    paint = row.get("paint", False)
+    if paint not in (True, False):
+        errors.append("paint must be true or false")
+    elif paint and not (isinstance(tint, str) and TINT.match(tint or "")):
+        errors.append("paint requires tint #RRGGBB")
     try:
         _optional(_BY_PASSIVE, row.get("passive", ""), "passive")
         _optional(_BY_WEAPON, row.get("weapon", ""), "weapon")
@@ -381,6 +391,7 @@ def _normalize_draft(row: dict) -> dict:
         "author": row["author"].strip(),
         "appearance": _canon(_BY_CHAR, row["appearance"], "appearance"),
         "tint": row.get("tint") or "",
+        "paint": bool(row.get("paint", False)),
         "passive": _optional(_BY_PASSIVE, row.get("passive", ""), "passive"),
         "weapon": _optional(_BY_WEAPON, row.get("weapon", ""), "weapon"),
         "portrait": row.get("portrait") or "",
@@ -452,6 +463,29 @@ def apply_model_draft(studio: dict, draft: dict, onto_id: int | None = None) -> 
     errors, _warnings = validate_studio(studio)
     if errors:
         raise MegabonkError("refusing to apply:\n" + "\n".join(errors))
+    return studio
+
+
+def append_character(studio: dict, row: dict) -> dict:
+    """Return a new studio file with one character added. Refuses an id that is already present."""
+    if not isinstance(row, dict):
+        raise MegabonkError("character must be an object")
+    if "characters" in row or row.get("format") == FORMAT:
+        raise MegabonkError("expected one character, not a studio file")
+    studio = copy.deepcopy(studio)
+    paint = row.get("paint", False)
+    if paint not in (True, False):
+        raise MegabonkError("paint must be true or false")
+    added = dict(row)
+    added["paint"] = paint
+    ident = added.get("id")
+    for existing in studio.get("characters") or []:
+        if int(existing["id"]) == int(ident):
+            raise MegabonkError(f"id {ident} is already in the file")
+    studio.setdefault("characters", []).append(added)
+    errors, _warnings = validate_studio(studio)
+    if errors:
+        raise MegabonkError("refusing to append:\n" + "\n".join(errors))
     return studio
 
 

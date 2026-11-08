@@ -143,6 +143,8 @@ namespace UmMegabonkStudio
             WriteStats(live.Data, live, draft);
             AssignPassive(dm, live.Data, dm.characterData[live.Appearance], draft.Passive);
             AssignWeapon(dm, live.Data, dm.characterData[live.Appearance], draft.Weapon);
+            if (draft.Paint)
+                Plugin.Info("'" + draft.Name + "' paint applies on the next launch. This session keeps the materials already on the skin.");
             Plugin.Info("Updated '" + draft.Name + "' for the next run. A new appearance still needs a restart.");
         }
 
@@ -244,10 +246,104 @@ namespace UmMegabonkStudio
             unlock.author = string.IsNullOrWhiteSpace(draft.Author) ? "local" : draft.Author;
             unlock.price = 0;
             unlock.isEnabled = true;
-            // Keep the vanilla material array by reference. Replacing it removed the visible model
-            // in the 2cdd99a playtest. Do not recolor those shared materials.
-            copy.materials = source.materials;
+            // An empty or unpainted tint keeps the vanilla array. Recoloring those objects
+            // would change every character that shares them. Paint copies each material first.
+            AssignMaterials(copy, source, draft);
             return copy;
+        }
+
+        static void AssignMaterials(SkinData copy, SkinData source, StudioCharacter draft)
+        {
+            if (draft == null || !draft.Paint)
+            {
+                copy.materials = source.materials;
+                return;
+            }
+            if (!TryHex(draft.Tint, out var color))
+            {
+                Plugin.Warn("'" + draft.Name + "' paint is set but tint is not #RRGGBB. Shared materials kept.");
+                copy.materials = source.materials;
+                return;
+            }
+            var shared = source.materials;
+            if (shared == null || shared.Length == 0)
+            {
+                Plugin.Warn("'" + draft.Name + "' has no materials to paint. Shared materials kept.");
+                copy.materials = source.materials;
+                return;
+            }
+            var owned = new Material[shared.Length];
+            int colored = 0;
+            var propsUsed = "";
+            try
+            {
+                for (int i = 0; i < shared.Length; i++)
+                {
+                    var original = shared[i];
+                    if (original == null) continue;
+                    var inst = new Material(original);
+                    inst.hideFlags = HideFlags.DontUnloadUnusedAsset;
+                    inst.name = original.name + " paint";
+                    if (PaintInstance(inst, color, out var used))
+                    {
+                        colored++;
+                        if (propsUsed.Length == 0) propsUsed = used;
+                    }
+                    owned[i] = inst;
+                }
+            }
+            catch (Exception ex)
+            {
+                DestroyOwned(owned);
+                Plugin.Warn("'" + draft.Name + "' paint failed (" + ex.GetType().Name + "). Shared materials kept.");
+                copy.materials = source.materials;
+                return;
+            }
+            if (colored == 0)
+            {
+                DestroyOwned(owned);
+                Plugin.Warn("'" + draft.Name + "' materials have none of _Color, _BaseColor, _AlbedoColor. Shared materials kept. This tint is one whole-body color; skin and clothes are not separate slots.");
+                copy.materials = source.materials;
+                return;
+            }
+            copy.materials = owned;
+            Plugin.Info("'" + draft.Name + "' painted " + colored + " of " + shared.Length
+                + " material instances with " + draft.Tint + " via " + propsUsed
+                + ". Shared materials were not changed. One color covers every painted material, including skin.");
+        }
+
+        static bool PaintInstance(Material mat, Color color, out string used)
+        {
+            used = "";
+            string[] names = { "_Color", "_BaseColor", "_AlbedoColor" };
+            for (int i = 0; i < names.Length; i++)
+            {
+                if (!mat.HasProperty(names[i])) continue;
+                mat.SetColor(names[i], color);
+                if (used.Length > 0) used += ",";
+                used += names[i];
+            }
+            return used.Length > 0;
+        }
+
+        static void DestroyOwned(Material[] owned)
+        {
+            if (owned == null) return;
+            for (int i = 0; i < owned.Length; i++)
+            {
+                if (owned[i] != null) UnityEngine.Object.Destroy(owned[i]);
+            }
+        }
+
+        static bool TryHex(string tint, out Color color)
+        {
+            color = Color.white;
+            if (string.IsNullOrEmpty(tint) || tint.Length != 7 || tint[0] != '#') return false;
+            if (!int.TryParse(tint.Substring(1, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var r)) return false;
+            if (!int.TryParse(tint.Substring(3, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var g)) return false;
+            if (!int.TryParse(tint.Substring(5, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var b)) return false;
+            color = new Color(r / 255f, g / 255f, b / 255f, 1f);
+            return true;
         }
 
         // PlayerRenderer.SetCharacter indexes a dictionary by ECharacter. DataManager.GetSkins is

@@ -591,6 +591,33 @@ def test_provider_errors_map_allowlisted_codes_and_hide_the_body():
     assert "SendPaused" in client
 
 
+def test_superman_append_paints_only_the_new_id():
+    from um.megabonk_studio import append_character
+
+    row = json.loads((ROOT / "examples" / "megabonk-characters" / "studio" / "superman.character.json").read_text(encoding="utf-8"))
+    starter = starter_file()
+    added = append_character(starter, row)
+    assert [item["id"] for item in starter["characters"]] == [1842201001, 1842201002, 1842201003]
+    assert [item["id"] for item in added["characters"]] == [1842201001, 1842201002, 1842201003, 1842201004]
+    made = added["characters"][-1]
+    assert made["appearance"] == "Megachad" and made["passive"] == "Float" and made["weapon"] == "Aura"
+    assert made["paint"] is True and made["tint"] == "#1A3FBF"
+    assert starter["characters"][0].get("paint") is not True
+    with pytest.raises(MegabonkError, match="already"):
+        append_character(added, row)
+    bare = dict(row)
+    bare["paint"] = True
+    bare["tint"] = ""
+    bare["id"] = 1842201005
+    with pytest.raises(MegabonkError, match="paint"):
+        append_character(starter, bare)
+    registrar = (ROOT / "examples" / "megabonk-characters" / "plugin" / "Registrar.cs").read_text(encoding="utf-8")
+    assert "draft.Paint" in registrar
+    assert "new Material(" in registrar
+    assert "copy.materials = source.materials" in registrar
+    assert "Shared materials were not changed" in registrar
+
+
 def test_model_client_has_no_default_endpoint_and_the_panel_stays_button_only():
     plugin = ROOT / "examples" / "megabonk-characters" / "plugin"
     client = (plugin / "AiClient.cs").read_text(encoding="utf-8")

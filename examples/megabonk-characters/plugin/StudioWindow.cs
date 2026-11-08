@@ -504,7 +504,7 @@ namespace UmMegabonkStudio
                 return;
             }
             Banner("Manual edit of " + row.Name + ", id " + row.Id + ".", new Color(0.16f, 0.18f, 0.24f, 1f));
-            GUILayout.Label("A passive is one of the 21 existing effects. A weapon is one of the existing weapons. The mesh keeps the cloned materials. Tint is stored and is not painted onto those materials.", _label);
+            GUILayout.Label("A passive is one of the 21 existing effects. A weapon is one of the existing weapons. Paint copies the materials and applies one color to the whole body on the next launch. Skin and clothes change together. With paint off, the shared materials stay as they are.", _label);
             GUILayout.Label("Name", _section);
             DrawBuffer("name", 64f);
             Picker("Appearance", row.Appearance, Catalog.Characters, value => row.Appearance = value, false);
@@ -513,11 +513,15 @@ namespace UmMegabonkStudio
             var weaponShown = string.IsNullOrEmpty(row.Weapon) ? "(keep cloned weapon)" : row.Weapon;
             Picker("Weapon", weaponShown, WithBlank(Catalog.Weapons), value => row.Weapon = value, true);
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button(string.IsNullOrEmpty(row.Tint) ? "Tint: none" : "Tint: " + row.Tint, _button))
+            if (GUILayout.Button(row.Paint ? "Painted " + row.Tint : (string.IsNullOrEmpty(row.Tint) ? "Tint: none" : "Tint stored " + row.Tint), _button))
+            {
                 row.Tint = "";
-            if (GUILayout.Button("Gold", _button)) row.Tint = "#FFD24A";
-            if (GUILayout.Button("Lilac", _button)) row.Tint = "#E0C0FF";
-            if (GUILayout.Button("White", _button)) row.Tint = "#FFFFFF";
+                row.Paint = false;
+            }
+            if (GUILayout.Button("Gold", _button)) { row.Tint = "#FFD24A"; row.Paint = true; }
+            if (GUILayout.Button("Lilac", _button)) { row.Tint = "#E0C0FF"; row.Paint = true; }
+            if (GUILayout.Button("White", _button)) { row.Tint = "#FFFFFF"; row.Paint = true; }
+            if (GUILayout.Button("Blue", _button)) { row.Tint = "#1A3FBF"; row.Paint = true; }
             GUILayout.EndHorizontal();
             Section("Stats");
             GUILayout.Label("Addition adds to the additive component. Multiplication affects the multiplicative component. Flat is the third published mode; its formula was not re-measured. Crit chance treats 1 as 100%.", _label);
@@ -590,7 +594,7 @@ namespace UmMegabonkStudio
             GUILayout.Label("Look: " + draft.Appearance, _label);
             GUILayout.Label("Passive: " + Blank(draft.Passive), _label);
             GUILayout.Label("Weapon: " + Blank(draft.Weapon), _label);
-            GUILayout.Label("Tint: " + (string.IsNullOrEmpty(draft.Tint) ? "(none, materials stay cloned)" : draft.Tint), _label);
+            GUILayout.Label("Tint: " + (string.IsNullOrEmpty(draft.Tint) ? "(none)" : draft.Tint) + (draft.Paint ? " painted on the whole body" : " stored, materials stay shared"), _label);
             if (draft.Stats == null || draft.Stats.Count == 0)
                 GUILayout.Label("Stats: (none)", _label);
             else

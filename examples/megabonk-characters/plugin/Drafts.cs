@@ -21,6 +21,7 @@ namespace UmMegabonkStudio
         [JsonPropertyName("author")] public string Author { get; set; } = "local";
         [JsonPropertyName("appearance")] public string Appearance { get; set; } = "Fox";
         [JsonPropertyName("tint")] public string Tint { get; set; } = "";
+        [JsonPropertyName("paint")] public bool Paint { get; set; }
         [JsonPropertyName("passive")] public string Passive { get; set; } = "";
         [JsonPropertyName("weapon")] public string Weapon { get; set; } = "";
         [JsonPropertyName("portrait")] public string Portrait { get; set; } = "";
