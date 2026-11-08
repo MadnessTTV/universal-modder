@@ -154,6 +154,7 @@ namespace UmMegabonkStudio
             if (incoming == null) return;
             _busy = false;
             Busy = false;
+            Generation++;
             if (incoming.StartsWith("error\n", StringComparison.Ordinal))
             {
                 Status = incoming.Substring(6);
@@ -182,6 +183,16 @@ namespace UmMegabonkStudio
             Questions = new List<string>();
             Pending = draft;
             Status = "Draft ready: " + draft.Name + ", look " + draft.Appearance + ". It is not in the character list until you apply it.";
+        }
+
+        public static int Generation;
+
+        public static void BeginTopic(string status)
+        {
+            Pending = null;
+            Questions = new List<string>();
+            Transcript.Clear();
+            Status = status ?? "";
         }
 
         public static string LastUser = "";

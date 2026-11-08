@@ -465,6 +465,76 @@ def test_synthetic_openai_chat_envelope_can_ask_draft_and_refine():
     assert history == []
 
 
+def test_keyboard_buffer_and_create_flow_do_not_overwrite():
+    from um.megabonk_prompt import PromptBuffer, StudioSession, apply_key, describe_changes
+
+    buf = PromptBuffer()
+    for ch in "A quiet fox.":
+        apply_key(buf, "char", character=ch)
+    apply_key(buf, "return")
+    apply_key(buf, "char", character="Gold tint.")
+    assert buf.text == "A quiet fox.\nGold tint."
+    apply_key(buf, "backspace")
+    assert buf.text.endswith("tint")
+    apply_key(buf, "home")
+    apply_key(buf, "right", shift=True)
+    assert buf.selected_text() == "G"
+    apply_key(buf, "char", character="g")
+    assert "gold tint" in buf.text
+    buf.select_all()
+    copied = apply_key(buf, "c", ctrl=True)
+    assert copied == buf.text
+    apply_key(buf, "left")
+    apply_key(buf, "v", ctrl=True, clipboard="!")
+    assert buf.text.startswith("!")
+    assert "gold tint" in buf.text
+    line = PromptBuffer("one two\nthree")
+    line.caret = line.mark = len(line.text)
+    line.move("left", ctrl=True)
+    assert line.caret == line.text.rfind("\n") + 1
+    line.move("up")
+    assert line.caret == 0
+
+    session = StudioSession()
+    session.begin_create()
+    session.note_reply("questions")
+    assert session.screen == "create_questions"
+    assert session.edit_id is None
+    session.note_reply("draft")
+    assert session.apply_target() is None
+    original = starter_file()
+    draft = interpret_model_message(_draft_message())["character"]
+    created = apply_model_draft(original, draft)
+    assert [row["id"] for row in original["characters"]] == [1842201001, 1842201002, 1842201003]
+    new_id = created["characters"][-1]["id"]
+    assert new_id != 1842201001
+    session.note_created(new_id)
+    session.begin_refine()
+    session.note_reply("draft")
+    assert session.apply_target() == new_id
+    refined = interpret_model_message(_draft_message(name="Cinder II", description="A brighter spark."))["character"]
+    updated = apply_model_draft(created, refined, onto_id=session.apply_target())
+    assert updated["characters"][-1]["id"] == new_id
+    assert updated["characters"][0]["name"] == "Lumen"
+    edit = StudioSession()
+    edit.begin_edit(1842201001)
+    edit.note_reply("draft")
+    assert edit.apply_target() == 1842201001
+    changes = describe_changes(original["characters"][0], refined)
+    assert any(line.startswith("Name:") and "Lumen" in line and "Cinder II" in line for line in changes)
+
+    plugin = ROOT / "examples" / "megabonk-characters" / "plugin"
+    sources = "\n".join(path.read_text(encoding="utf-8") for path in plugin.glob("*.cs"))
+    assert "TextField" not in sources and "TextArea" not in sources and "TextEditor" not in sources
+    assert "systemCopyBuffer" in sources
+    assert "GetKeyDown" in sources and "BlockGameplayKeys" in sources
+    window = (plugin / "StudioWindow.cs").read_text(encoding="utf-8")
+    assert "Create a character" in window
+    assert "Apply as a new character" in window
+    assert "Apply these changes" in window
+    assert "ABCDEFGHIJKLMNOPQRSTUVWXYZ" not in window
+
+
 def test_model_client_has_no_default_endpoint_and_the_panel_stays_button_only():
     plugin = ROOT / "examples" / "megabonk-characters" / "plugin"
     client = (plugin / "AiClient.cs").read_text(encoding="utf-8")

@@ -6,9 +6,8 @@ using UnityEngine;
 
 namespace UmMegabonkStudio
 {
-    // IMGUI on this build cannot use a text box. TextEditor.SaveBackup is stripped and throws
-    // Method unstripping failed, and the exception used to skip EndScrollView, which then
-    // spammed "pushing more GUIClips than popping". Editing is buttons only.
+    // The stripped text widget is not used. Typed characters come from Event.current
+    // into PromptBuffer. A hidden panel does not read keys and does not block the game.
     public class StudioBehaviour : MonoBehaviour
     {
         public StudioBehaviour(IntPtr ptr) : base(ptr) { }
@@ -19,7 +18,7 @@ namespace UmMegabonkStudio
             try
             {
                 AiClient.Poll();
-                if (UnityEngine.Input.GetKeyDown(KeyCode.F7))
+                if (!StudioWindow.BlockGameplayKeys && UnityEngine.Input.GetKeyDown(KeyCode.F7))
                     StudioWindow.RequestToggle();
             }
             catch (Exception ex)
@@ -52,11 +51,25 @@ namespace UmMegabonkStudio
         static int _index;
         static StudioFile _file;
         static bool _logged;
-        static bool _editName;
         static string _status = "The editor is closed until you press F7.";
         static GUIStyle _label;
+        static GUIStyle _title;
+        static GUIStyle _section;
         static GUIStyle _button;
+        static GUIStyle _primary;
+        static GUIStyle _well;
         static int _styleSize;
+        static string _focus;
+        static bool _awaiting;
+        static int _seenGeneration;
+        static string _replyIntent = "";
+        static string _menu = "";
+        static bool _showAllStats;
+        static readonly StudioSession _session = new StudioSession();
+        static readonly Dictionary<string, PromptBuffer> _buffers = new Dictionary<string, PromptBuffer>();
+        static readonly List<string> _history = new List<string>();
+
+        public static bool BlockGameplayKeys { get { return _open && _focus != null; } }
 
         public static void Install()
         {
@@ -77,11 +90,13 @@ namespace UmMegabonkStudio
             if (_open)
             {
                 Reload();
-                _editName = false;
+                _session.Home();
+                _focus = null;
                 Plugin.Info("Studio editor opened.");
             }
             else
             {
+                _focus = null;
                 ReleaseInput();
                 Plugin.Info("Studio editor closed.");
             }
@@ -99,6 +114,7 @@ namespace UmMegabonkStudio
                 _area = false;
                 try { GUILayout.EndArea(); } catch (Exception) { }
             }
+            _focus = null;
             ReleaseInput();
             _open = false;
         }
@@ -128,22 +144,30 @@ namespace UmMegabonkStudio
             var ev = Event.current;
             if (ev != null && ev.type == EventType.KeyDown && ev.keyCode == KeyCode.F7)
             {
-                RequestToggle();
-                ev.Use();
-                return;
+                if (BlockGameplayKeys)
+                    ev.Use();
+                else
+                {
+                    RequestToggle();
+                    ev.Use();
+                    return;
+                }
             }
             if (!_open)
             {
                 if (_wasOpen) ReleaseInput();
                 _wasOpen = false;
+                _focus = null;
                 return;
             }
             _wasOpen = true;
+            CaptureTyping(ev);
+            NoteModel();
             Styles();
             _area = false;
             _scroll = false;
-            _rect = new Rect(Screen.width * 0.06f, Screen.height * 0.04f, Screen.width * 0.88f, Screen.height * 0.92f);
-            Fill(_rect, new Color(0.04f, 0.05f, 0.07f, 1f));
+            _rect = new Rect(Screen.width * 0.05f, Screen.height * 0.04f, Screen.width * 0.90f, Screen.height * 0.92f);
+            Fill(_rect, new Color(0.05f, 0.06f, 0.08f, 1f));
             GUILayout.BeginArea(_rect);
             _area = true;
             try
@@ -164,208 +188,524 @@ namespace UmMegabonkStudio
             }
         }
 
-        static string _menu = "";
-        static string _filter = "";
-        static string _prompt = "";
-        static bool _editPrompt;
-        static readonly List<string> _history = new List<string>();
+        static void CaptureTyping(Event ev)
+        {
+            if (_focus == null || ev == null) return;
+            if (ev.type != EventType.KeyDown && ev.type != EventType.KeyUp) return;
+            if (ev.type == EventType.KeyDown && ev.keyCode != KeyCode.F7)
+            {
+                var buf = Buf(_focus);
+                if (ev.keyCode == KeyCode.Escape)
+                    _focus = null;
+                else
+                    ApplyKey(buf, ev);
+            }
+            ev.Use();
+        }
+
+        static void ApplyKey(PromptBuffer buf, Event ev)
+        {
+            bool ctrl = (ev.control || ev.command) && !ev.alt;
+            var key = ev.keyCode;
+            if (ctrl && key == KeyCode.A) { buf.SelectAll(); return; }
+            if (ctrl && key == KeyCode.C) { WriteCopy(buf.SelectedText()); return; }
+            if (ctrl && key == KeyCode.X)
+            {
+                var taken = buf.SelectedText();
+                if (taken.Length > 0) buf.Insert("");
+                WriteCopy(taken);
+                return;
+            }
+            if (ctrl && key == KeyCode.V)
+            {
+                var pasted = ReadPaste();
+                if (pasted != null) buf.Insert(pasted);
+                return;
+            }
+            if (key == KeyCode.Backspace) { buf.Backspace(); return; }
+            if (key == KeyCode.Delete) { buf.Delete(); return; }
+            if (key == KeyCode.LeftArrow) { buf.Move("left", ev.shift, ctrl); return; }
+            if (key == KeyCode.RightArrow) { buf.Move("right", ev.shift, ctrl); return; }
+            if (key == KeyCode.UpArrow) { buf.Move("up", ev.shift, ctrl); return; }
+            if (key == KeyCode.DownArrow) { buf.Move("down", ev.shift, ctrl); return; }
+            if (key == KeyCode.Home) { buf.Move("home", ev.shift, ctrl); return; }
+            if (key == KeyCode.End) { buf.Move("end", ev.shift, ctrl); return; }
+            if (key == KeyCode.Return || key == KeyCode.KeypadEnter) { buf.Insert("\n"); return; }
+            if (ctrl) return;
+            if (ev.character >= ' ') buf.Insert(ev.character.ToString());
+        }
+
+        static string ReadPaste()
+        {
+            try { return GUIUtility.systemCopyBuffer ?? ""; }
+            catch (Exception)
+            {
+                _status = "Paste is unavailable on this build.";
+                return null;
+            }
+        }
+
+        static void WriteCopy(string text)
+        {
+            try { GUIUtility.systemCopyBuffer = text ?? ""; }
+            catch (Exception) { _status = "Copy is unavailable on this build."; }
+        }
+
+        static void NoteModel()
+        {
+            if (_seenGeneration == AiClient.Generation) return;
+            _seenGeneration = AiClient.Generation;
+            if (!_awaiting) return;
+            _awaiting = false;
+            if (AiClient.Questions != null && AiClient.Questions.Count > 0)
+            {
+                _session.NoteReply("questions");
+                _focus = "answer";
+                Buf("answer").Text = "";
+                Buf("answer").Caret = 0;
+                Buf("answer").Mark = 0;
+                return;
+            }
+            if (AiClient.Pending != null)
+            {
+                _session.NoteReply("draft");
+                _focus = null;
+            }
+        }
 
         static void DrawBody()
         {
-            GUILayout.Label("Megabonk Studio", _label);
-            GUILayout.Label("F7 or Close hides this panel. While it is closed, this plugin does not draw.", _label);
-            GUILayout.Label("A passive is one of the 21 existing effects. A weapon is one of the existing weapons. Appearance clones that character's model. A new 3D model and a new kind of ability are not available here.", _label);
-            GUILayout.Label("Stat amounts are the game's own numbers. Addition adds to the additive component. Multiplication affects the multiplicative component. Flat is the third published mode; its formula was not re-measured. Crit chance treats 1 as 100%.", _label);
-            GUILayout.Label(_status, _label);
-            if (GUILayout.Button("Close (F7)", _button))
-                RequestToggle();
-            if (GUILayout.Button(_history.Count == 0 ? "Undo (nothing saved yet)" : "Undo last apply", _button) && _history.Count > 0)
-                Undo();
+            DrawTop();
             if (_file == null) Reload();
+            var screen = _session.Screen;
+            if (screen == "create_prompt") DrawCreatePrompt();
+            else if (screen == "create_questions") DrawQuestions();
+            else if (screen == "create_preview") DrawCreatePreview();
+            else if (screen == "refine_offer") DrawRefineOffer();
+            else if (screen == "refine_prompt") DrawRefinePrompt();
+            else if (screen == "edit_home") DrawEditHome();
+            else if (screen == "edit_questions") DrawQuestions();
+            else if (screen == "edit_preview") DrawEditPreview();
+            else if (screen == "manual") DrawManual();
+            else DrawHome();
+        }
+
+        static void DrawTop()
+        {
+            var bar = GUILayoutUtility.GetRect(10f, 8f);
+            if (Event.current.type == EventType.Repaint)
+                Fill(bar, new Color(0.18f, 0.45f, 0.42f, 1f));
+            GUILayout.Label("Megabonk Studio", _title);
+            GUILayout.Label(_status, _label);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Close", _button))
+                RequestToggle();
+            if (GUILayout.Button(_history.Count == 0 ? "Undo" : "Undo last change", _button) && _history.Count > 0)
+                Undo();
+            if (_session.Screen != "home" && GUILayout.Button("Characters", _button))
+                GoHome();
+            GUILayout.EndHorizontal();
+            GUILayout.Space(8f);
+        }
+
+        static void DrawHome()
+        {
+            GUILayout.Label("Start here", _section);
+            GUILayout.Label("Create a character from a description you type. That adds someone new. It does not change the people already in the list.", _label);
+            if (Wide("Create a character", new Color(0.55f, 0.86f, 0.70f, 1f)))
+                BeginCreate();
+            if (AiClient.Pending != null && _replyIntent == "create" && Wide("Review the new-character draft", new Color(0.55f, 0.86f, 0.70f, 1f)))
+            {
+                _session.Intent = "create";
+                _session.HasEditId = false;
+                _session.NoteReply("draft");
+            }
+            if (AiClient.Pending != null && _replyIntent != "create" && Find(_session.EditId) != null && Wide("Review changes to " + EditedName(), new Color(0.95f, 0.78f, 0.45f, 1f)))
+            {
+                _session.Intent = _replyIntent.Length == 0 ? "edit" : _replyIntent;
+                _session.HasEditId = true;
+                _session.NoteReply("draft");
+            }
+            Section("Your characters");
+            GUILayout.Label("Edit is separate. It changes that one character and shows the difference before anything is saved.", _label);
             var rows = _file.Characters;
-            GUILayout.Label("Characters", _label);
+            if (rows.Count == 0)
+                GUILayout.Label("No characters in the list yet.", _label);
             for (int i = 0; i < rows.Count; i++)
             {
-                var mark = i == _index ? "Selected: " : "Select: ";
-                if (GUILayout.Button(mark + rows[i].Name + "    look " + rows[i].Appearance, _button))
-                {
-                    _index = i;
-                    _menu = "";
-                }
+                var row = rows[i];
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(row.Name + "   look " + row.Appearance + "   id " + row.Id, _label, GUILayout.ExpandWidth(true));
+                if (GUILayout.Button("Edit " + row.Name, _button, GUILayout.Width(Screen.width * 0.28f)))
+                    BeginEdit(row.Id);
+                GUILayout.EndHorizontal();
+                GUILayout.Space(4f);
             }
-            if (rows.Count == 0)
+            ConnectionLine();
+        }
+
+        static void DrawCreatePrompt()
+        {
+            Steps("Describe", "Answer", "Preview", 0);
+            Banner("New character. Nobody already in the list is replaced.", new Color(0.12f, 0.28f, 0.22f, 1f));
+            GUILayout.Label("Click the box and type. Enter starts a new line. Arrows move the caret. Esc gives keys back to the game.", _label);
+            DrawBuffer("create", 180f);
+            if (Wide(AiClient.Busy ? "Waiting for the model" : "Send description", new Color(0.55f, 0.86f, 0.70f, 1f)) && !AiClient.Busy)
+                SendPrompt(Buf("create"), "");
+            ConnectionLine();
+        }
+
+        static void DrawQuestions()
+        {
+            Steps("Describe", "Answer", "Preview", 1);
+            var creating = _session.Intent == "create";
+            Banner(creating
+                ? "The model needs a few answers before it can add someone new."
+                : "The model needs a few answers before it changes " + EditedName() + ".",
+                creating ? new Color(0.12f, 0.28f, 0.22f, 1f) : new Color(0.28f, 0.20f, 0.10f, 1f));
+            foreach (var question in AiClient.Questions)
+                GUILayout.Label("Question: " + question, _label);
+            GUILayout.Label("Type the answers below.", _label);
+            DrawBuffer("answer", 140f);
+            if (Wide(AiClient.Busy ? "Waiting for the model" : "Send answers", new Color(0.55f, 0.86f, 0.70f, 1f)) && !AiClient.Busy)
+                SendPrompt(Buf("answer"), ContextForIntent());
+        }
+
+        static void DrawCreatePreview()
+        {
+            Steps("Describe", "Answer", "Preview", 2);
+            Banner("Applying here adds a new character. Existing ids stay as they are.", new Color(0.12f, 0.28f, 0.22f, 1f));
+            DrawDraftFacts(AiClient.Pending);
+            if (Wide("Apply as a new character", new Color(0.55f, 0.86f, 0.70f, 1f)))
+                ApplyAsNew();
+            if (GUILayout.Button("Discard draft", _button))
+                DiscardDraft();
+        }
+
+        static void DrawRefineOffer()
+        {
+            var created = Find(_session.CreatedId);
+            Banner("Added " + (created == null ? "the new character" : created.Name) + ". The other characters were not changed.", new Color(0.12f, 0.28f, 0.22f, 1f));
+            GUILayout.Label("You can type another description to change only this new character.", _label);
+            if (Wide("Refine with another prompt", new Color(0.55f, 0.86f, 0.70f, 1f)))
             {
-                ModelSection(null);
+                _session.BeginRefine();
+                _focus = "refine";
+                var buf = Buf("refine");
+                buf.Text = "";
+                buf.Caret = 0;
+                buf.Mark = 0;
+            }
+        }
+
+        static void DrawRefinePrompt()
+        {
+            var created = Find(_session.EditId);
+            Banner("This changes " + (created == null ? "the new character" : created.Name) + " only. It does not create another character and does not change the others.", new Color(0.12f, 0.28f, 0.22f, 1f));
+            DrawBuffer("refine", 160f);
+            if (Wide(AiClient.Busy ? "Waiting for the model" : "Send refinement", new Color(0.55f, 0.86f, 0.70f, 1f)) && !AiClient.Busy)
+                SendPrompt(Buf("refine"), created == null ? "" : JsonSerializer.Serialize(created));
+        }
+
+        static void DrawEditHome()
+        {
+            var row = Find(_session.EditId);
+            if (row == null)
+            {
+                GUILayout.Label("That character is no longer in the list.", _label);
                 return;
             }
-            if (_index < 0 || _index >= rows.Count) _index = 0;
-            var cur = rows[_index];
-            Picker("Appearance", cur.Appearance, Catalog.Characters, value => cur.Appearance = value, false);
-            var passiveShown = string.IsNullOrEmpty(cur.Passive) ? "(keep cloned passive)" : cur.Passive;
-            Picker("Passive", passiveShown, WithBlank(Catalog.Passives), value => cur.Passive = value, true);
-            var weaponShown = string.IsNullOrEmpty(cur.Weapon) ? "(keep cloned weapon)" : cur.Weapon;
-            Picker("Weapon", weaponShown, WithBlank(Catalog.Weapons), value => cur.Weapon = value, true);
-            GUILayout.Label("Tint is stored as a color. The 3D model keeps the cloned character's materials.", _label);
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button(string.IsNullOrEmpty(cur.Tint) ? "Tint: none" : "Tint: " + cur.Tint, _button))
-                cur.Tint = "";
-            if (GUILayout.Button("Gold", _button)) cur.Tint = "#FFD24A";
-            if (GUILayout.Button("Lilac", _button)) cur.Tint = "#E0C0FF";
-            if (GUILayout.Button("White", _button)) cur.Tint = "#FFFFFF";
-            GUILayout.EndHorizontal();
-            GUILayout.Label("Name:  " + cur.Name, _label);
-            if (GUILayout.Button(_editName ? "Done editing name" : "Edit name", _button))
+            Banner("Editing " + row.Name + ", id " + row.Id + ". This does not create a new character.", new Color(0.28f, 0.20f, 0.10f, 1f));
+            GUILayout.Label("Look " + row.Appearance + ". Passive " + Blank(row.Passive) + ". Weapon " + Blank(row.Weapon) + ".", _label);
+            if (Wide("Describe a change", new Color(0.95f, 0.78f, 0.45f, 1f)))
             {
-                _editName = !_editName;
-                _editPrompt = false;
+                _session.Intent = "edit";
+                _session.Screen = "refine_prompt";
+                _focus = "refine";
+                var buf = Buf("refine");
+                buf.Text = "";
+                buf.Caret = 0;
+                buf.Mark = 0;
+                AiClient.BeginTopic("Describe what should change about " + row.Name + ". Nothing is sent until you press Send.");
             }
-            if (_editName) NameKeys(() => cur.Name ?? "", value => cur.Name = value);
-            GUILayout.Label("Every supported stat. Unchanged means this character does not add an extra modifier.", _label);
+            if (GUILayout.Button("Edit appearance and stats manually", _button))
+            {
+                _session.BeginManual();
+                var name = Buf("name");
+                name.Text = row.Name ?? "";
+                name.Caret = name.Text.Length;
+                name.Mark = name.Caret;
+                _menu = "";
+            }
+        }
+
+        static void DrawEditPreview()
+        {
+            var row = Find(_session.EditId);
+            Banner("These changes apply to " + (row == null ? "the selected id" : row.Name) + " only. Nothing new is created.", new Color(0.28f, 0.20f, 0.10f, 1f));
+            if (row != null && AiClient.Pending != null)
+            {
+                GUILayout.Label("What will change", _section);
+                foreach (var line in DraftDiff.Describe(row, AiClient.Pending))
+                    GUILayout.Label(line, _label);
+            }
+            DrawDraftFacts(AiClient.Pending);
+            if (Wide("Apply these changes", new Color(0.95f, 0.78f, 0.45f, 1f)))
+                ApplyOntoEdited();
+            if (GUILayout.Button("Discard draft", _button))
+                DiscardDraft();
+        }
+
+        static void DrawManual()
+        {
+            var row = Find(_session.EditId);
+            if (row == null)
+            {
+                GUILayout.Label("That character is no longer in the list.", _label);
+                return;
+            }
+            Banner("Manual edit of " + row.Name + ", id " + row.Id + ".", new Color(0.16f, 0.18f, 0.24f, 1f));
+            GUILayout.Label("A passive is one of the 21 existing effects. A weapon is one of the existing weapons. The mesh keeps the cloned materials. Tint is stored and is not painted onto those materials.", _label);
+            GUILayout.Label("Name", _section);
+            DrawBuffer("name", 64f);
+            Picker("Appearance", row.Appearance, Catalog.Characters, value => row.Appearance = value, false);
+            var passiveShown = string.IsNullOrEmpty(row.Passive) ? "(keep cloned passive)" : row.Passive;
+            Picker("Passive", passiveShown, WithBlank(Catalog.Passives), value => row.Passive = value, true);
+            var weaponShown = string.IsNullOrEmpty(row.Weapon) ? "(keep cloned weapon)" : row.Weapon;
+            Picker("Weapon", weaponShown, WithBlank(Catalog.Weapons), value => row.Weapon = value, true);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(string.IsNullOrEmpty(row.Tint) ? "Tint: none" : "Tint: " + row.Tint, _button))
+                row.Tint = "";
+            if (GUILayout.Button("Gold", _button)) row.Tint = "#FFD24A";
+            if (GUILayout.Button("Lilac", _button)) row.Tint = "#E0C0FF";
+            if (GUILayout.Button("White", _button)) row.Tint = "#FFFFFF";
+            GUILayout.EndHorizontal();
+            Section("Stats");
+            GUILayout.Label("Addition adds to the additive component. Multiplication affects the multiplicative component. Flat is the third published mode; its formula was not re-measured. Crit chance treats 1 as 100%.", _label);
+            if (GUILayout.Button(_showAllStats ? "Hide unchanged stats" : "Show every stat", _button))
+                _showAllStats = !_showAllStats;
+            if (row.Stats == null) row.Stats = new List<StudioStat>();
             for (int s = 0; s < Catalog.Stats.Length; s++)
             {
-                var name = Catalog.Stats[s];
+                var statName = Catalog.Stats[s];
                 StudioStat have = null;
-                if (cur.Stats != null)
-                {
-                    foreach (var stat in cur.Stats)
-                        if (stat.Stat == name) have = stat;
-                }
-                var line = have == null
-                    ? name + ": unchanged"
-                    : name + ": " + have.Modify + " " + have.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture);
-                GUILayout.Label(line, _label);
-                if (have != null)
-                {
-                    GUILayout.BeginHorizontal();
-                    if (GUILayout.Button("Addition", _button)) have.Modify = "Addition";
-                    if (GUILayout.Button("Multiplication", _button)) have.Modify = "Multiplication";
-                    if (GUILayout.Button("Flat", _button)) have.Modify = "Flat";
-                    if (GUILayout.Button("-1", _button)) have.Amount -= 1f;
-                    if (GUILayout.Button("+1", _button)) have.Amount += 1f;
-                    if (GUILayout.Button("-0.1", _button)) have.Amount -= 0.1f;
-                    if (GUILayout.Button("+0.1", _button)) have.Amount += 0.1f;
-                    if (GUILayout.Button("Remove", _button)) cur.Stats.Remove(have);
-                    GUILayout.EndHorizontal();
-                }
+                foreach (var stat in row.Stats)
+                    if (stat.Stat == statName) have = stat;
+                if (have == null && !_showAllStats) continue;
+                GUILayout.Label(have == null ? statName + ": unchanged" : statName + ": " + have.Modify + " " + have.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), _label);
+                if (have == null) continue;
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Addition", _button)) have.Modify = "Addition";
+                if (GUILayout.Button("Multiplication", _button)) have.Modify = "Multiplication";
+                if (GUILayout.Button("Flat", _button)) have.Modify = "Flat";
+                if (GUILayout.Button("-1", _button)) have.Amount -= 1f;
+                if (GUILayout.Button("+1", _button)) have.Amount += 1f;
+                if (GUILayout.Button("-0.1", _button)) have.Amount -= 0.1f;
+                if (GUILayout.Button("+0.1", _button)) have.Amount += 0.1f;
+                if (GUILayout.Button("Remove", _button)) row.Stats.Remove(have);
+                GUILayout.EndHorizontal();
             }
             if (GUILayout.Button(_menu == "addstat" ? "Close stat list" : "Add a stat", _button))
             {
                 _menu = _menu == "addstat" ? "" : "addstat";
-                _filter = "";
+                _focus = _menu == "addstat" ? "filter" : null;
             }
             if (_menu == "addstat")
             {
-                FilterKeys();
+                GUILayout.Label("Type to filter the stat list.", _label);
+                DrawBuffer("filter", 52f);
+                var filter = Buf("filter").Text ?? "";
                 for (int s = 0; s < Catalog.Stats.Length; s++)
                 {
-                    var name = Catalog.Stats[s];
-                    if (_filter.Length > 0 && name.IndexOf(_filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
-                    if (GUILayout.Button("Add " + name, _button))
+                    var statName = Catalog.Stats[s];
+                    if (filter.Length > 0 && statName.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    if (GUILayout.Button("Add " + statName, _button))
                     {
-                        if (cur.Stats == null) cur.Stats = new List<StudioStat>();
                         var exists = false;
-                        foreach (var stat in cur.Stats) if (stat.Stat == name) exists = true;
-                        if (!exists) cur.Stats.Add(new StudioStat { Stat = name, Modify = "Addition", Amount = 0f });
+                        foreach (var stat in row.Stats) if (stat.Stat == statName) exists = true;
+                        if (!exists) row.Stats.Add(new StudioStat { Stat = statName, Modify = "Addition", Amount = 0f });
                         _menu = "";
+                        _focus = null;
                     }
                 }
             }
-            if (GUILayout.Button("Save manual edits", _button))
+            if (Wide("Save manual edits", new Color(0.75f, 0.82f, 0.9f, 1f)))
+            {
+                var typed = (Buf("name").Text ?? "").Trim();
+                if (typed.Length > 0) row.Name = typed;
+                Remember();
                 Save();
-            ModelSection(cur);
-        }
-
-        static void Picker(string label, string current, string[] values, Action<string> set, bool blankLabel)
-        {
-            var open = _menu == label;
-            if (GUILayout.Button(label + ":  " + current + (open ? "    (close list)" : "    (open list)"), _button))
-            {
-                _menu = open ? "" : label;
-                _filter = "";
-            }
-            if (!open) return;
-            FilterKeys();
-            for (int i = 0; i < values.Length; i++)
-            {
-                var value = values[i];
-                var shown = value.Length == 0 ? "(keep cloned)" : value;
-                if (_filter.Length > 0 && shown.IndexOf(_filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
-                if (GUILayout.Button(shown, _button))
-                {
-                    set(blankLabel && value.Length == 0 ? "" : value);
-                    _menu = "";
-                }
+                _status = "Saved manual edits to " + row.Name + ". Undo restores the previous list.";
             }
         }
 
-        static void FilterKeys()
+        static void DrawDraftFacts(StudioCharacter draft)
         {
-            GUILayout.Label("Filter: " + (_filter.Length == 0 ? "(all)" : _filter), _label);
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Clear filter", _button)) _filter = "";
-            if (GUILayout.Button("Backspace", _button) && _filter.Length > 0)
-                _filter = _filter.Substring(0, _filter.Length - 1);
-            GUILayout.EndHorizontal();
-            LetterRow(ch => _filter += ch);
-        }
-
-        static bool _lower;
-
-        static void NameKeys(Func<string> get, Action<string> assign)
-        {
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Backspace", _button) && get().Length > 0)
-                assign(get().Substring(0, get().Length - 1));
-            if (GUILayout.Button("Space", _button))
-                assign(get() + " ");
-            if (GUILayout.Button(_lower ? "Letters: lower" : "Letters: UPPER", _button))
-                _lower = !_lower;
-            GUILayout.EndHorizontal();
-            LetterRow(ch => assign(get() + ch));
-            DigitRow(ch => assign(get() + ch));
-        }
-
-        static void ModelSection(StudioCharacter selected)
-        {
-            GUILayout.Label("Model", _label);
-            GUILayout.Label(AiClient.Status, _label);
-            if (!AiClient.TryConfig(out var baseUrl, out var model, out _, out _))
+            if (draft == null)
             {
-                GUILayout.Label("No model is connected. Nothing is sent. To connect one, create ai.json beside characters.json with base_url and model. OpenAI's chat completions address is https://api.openai.com/v1 and the model id goes in model. The key stays in the MEGABONK_AI_KEY environment variable of this game process. Quit Thunderstore Mod Manager and start it again from a session that already has that variable. A manager that is already open does not see a variable added later. The key is not written into ai.json.", _label);
+                GUILayout.Label("No draft is waiting.", _label);
+                return;
             }
+            GUILayout.Label("Name: " + draft.Name, _label);
+            GUILayout.Label("Description: " + draft.Description, _label);
+            GUILayout.Label("Look: " + draft.Appearance, _label);
+            GUILayout.Label("Passive: " + Blank(draft.Passive), _label);
+            GUILayout.Label("Weapon: " + Blank(draft.Weapon), _label);
+            GUILayout.Label("Tint: " + (string.IsNullOrEmpty(draft.Tint) ? "(none, materials stay cloned)" : draft.Tint), _label);
+            if (draft.Stats == null || draft.Stats.Count == 0)
+                GUILayout.Label("Stats: (none)", _label);
             else
             {
-                GUILayout.Label("Configured server " + baseUrl + ", model " + model + ". A key, when the server needs one, is read from the environment and is not shown or saved.", _label);
+                foreach (var stat in draft.Stats)
+                    GUILayout.Label("Stat: " + stat.Stat + " " + stat.Modify + " " + stat.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), _label);
             }
-            foreach (var question in AiClient.Questions)
-                GUILayout.Label("Question: " + question, _label);
-            if (AiClient.Pending != null)
+        }
+
+        static void DrawBuffer(string id, float height)
+        {
+            var buf = Buf(id);
+            var rect = GUILayoutUtility.GetRect(10f, height, GUILayout.ExpandWidth(true));
+            var ev = Event.current;
+            if (ev.type == EventType.Repaint)
+                Fill(rect, _focus == id ? new Color(0.10f, 0.14f, 0.16f, 1f) : new Color(0.03f, 0.04f, 0.05f, 1f));
+            if (ev.type == EventType.MouseDown && rect.Contains(ev.mousePosition))
             {
-                var pending = AiClient.Pending;
-                GUILayout.Label("Pending draft " + pending.Name + " looks like " + pending.Appearance
-                    + ", passive " + (string.IsNullOrEmpty(pending.Passive) ? "(cloned)" : pending.Passive)
-                    + ", weapon " + (string.IsNullOrEmpty(pending.Weapon) ? "(cloned)" : pending.Weapon)
-                    + ". It is not in the character list until you apply it.", _label);
-                if (GUILayout.Button("Apply as a new character", _button))
-                    ApplyPending(null);
-                if (selected != null && GUILayout.Button("Apply onto " + selected.Name + ", keeping its id", _button))
-                    ApplyPending(selected);
-                if (GUILayout.Button("Discard draft", _button))
-                    AiClient.ClearPending();
+                _focus = id;
+                try { buf.SetCaret(CaretFromPoint(buf, rect, ev.mousePosition, _well), ev.shift); }
+                catch (Exception) { buf.SetCaret(buf.Text.Length, false); }
+                ev.Use();
             }
-            GUILayout.Label("Prompt: " + (_prompt.Length == 0 ? "(empty)" : _prompt), _label);
-            if (GUILayout.Button(_editPrompt ? "Done editing prompt" : "Edit prompt", _button))
+            var inner = new Rect(rect.x + 10f, rect.y + 8f, rect.width - 20f, rect.height - 16f);
+            var blink = true;
+            try { blink = ((int)(Time.realtimeSinceStartup * 2f) % 2) == 0; } catch (Exception) { }
+            var shown = buf.Shown(_focus == id, blink);
+            if (shown.Trim().Length == 0 && _focus != id)
+                shown = "Click here and type";
+            GUI.Label(inner, shown, _well);
+        }
+
+        static int CaretFromPoint(PromptBuffer buf, Rect rect, Vector2 mouse, GUIStyle style)
+        {
+            var text = buf.Text ?? "";
+            float lineH = style.fontSize + 8f;
+            float y = rect.y + 8f;
+            int index = 0;
+            var lines = text.Split('\n');
+            for (int i = 0; i < lines.Length; i++)
             {
-                _editPrompt = !_editPrompt;
-                _editName = false;
+                if (mouse.y < y + lineH || i == lines.Length - 1)
+                    return Math.Min(text.Length, index + ColumnAt(lines[i], mouse.x - rect.x - 10f, style));
+                index += lines[i].Length + 1;
+                y += lineH;
             }
-            if (_editPrompt)
-                NameKeys(() => _prompt, value => _prompt = value);
-            if (GUILayout.Button(AiClient.Busy ? "Waiting for the model" : "Send prompt", _button) && !AiClient.Busy)
+            return text.Length;
+        }
+
+        static int ColumnAt(string line, float x, GUIStyle style)
+        {
+            if (x <= 0f || line.Length == 0) return 0;
+            int lo = 0;
+            int hi = line.Length;
+            while (lo < hi)
             {
-                var context = selected == null ? "" : JsonSerializer.Serialize(selected);
-                AiClient.Ask(_prompt, context);
+                int mid = (lo + hi + 1) / 2;
+                if (style.CalcSize(new GUIContent(line.Substring(0, mid))).x <= x) lo = mid;
+                else hi = mid - 1;
             }
+            return lo;
+        }
+
+        static void BeginCreate()
+        {
+            _session.BeginCreate();
+            _replyIntent = "create";
+            var buf = Buf("create");
+            buf.Text = "";
+            buf.Caret = 0;
+            buf.Mark = 0;
+            _focus = "create";
+            AiClient.BeginTopic("Type a description. Nothing is sent until you press Send.");
+            _status = AiClient.Status;
+        }
+
+        static void BeginEdit(int id)
+        {
+            _session.BeginEdit(id);
+            _focus = null;
+            _replyIntent = "edit";
+            _status = "Editing " + EditedName() + ". Creating a new character is the other button, on the character list.";
+        }
+
+        static void GoHome()
+        {
+            _session.Home();
+            _focus = null;
+            _menu = "";
+        }
+
+        static void SendPrompt(PromptBuffer buf, string context)
+        {
+            var text = (buf.Text ?? "").Trim();
+            if (text.Length == 0)
+            {
+                _status = "Type a prompt first. Nothing was sent.";
+                return;
+            }
+            _replyIntent = _session.Intent;
+            _awaiting = true;
+            AiClient.Ask(text, context ?? "");
+            _status = AiClient.Status;
+        }
+
+        static string ContextForIntent()
+        {
+            if (_session.Intent == "create") return "";
+            var row = Find(_session.EditId);
+            return row == null ? "" : JsonSerializer.Serialize(row);
+        }
+
+        static void ApplyAsNew()
+        {
+            if (!_session.TryApplyNew(out _))
+            {
+                _status = "This screen does not add a character.";
+                return;
+            }
+            int before = _file == null || _file.Characters == null ? 0 : _file.Characters.Count;
+            ApplyPending(null);
+            if (_file == null || _file.Characters == null || _file.Characters.Count == before) return;
+            var created = _file.Characters[_file.Characters.Count - 1];
+            _session.NoteCreated(created.Id);
+            _focus = null;
+            _status = "Added " + created.Name + " as a new character. Existing characters were not replaced.";
+        }
+
+        static void ApplyOntoEdited()
+        {
+            int id;
+            if (!_session.TryApplyEdit(out id))
+            {
+                _status = "This screen does not change an existing character.";
+                return;
+            }
+            var row = Find(id);
+            if (row == null)
+            {
+                _status = "That character is not in the list. Nothing was written.";
+                return;
+            }
+            ApplyPending(row);
+            _session.BeginEdit(id);
+            _focus = null;
+            _status = "Updated " + row.Name + " and kept id " + id + ". Undo restores the previous list.";
+        }
+
+        static void DiscardDraft()
+        {
+            AiClient.ClearPending();
+            _focus = null;
+            GoHome();
+            _status = "Draft discarded. The character list was not changed.";
         }
 
         static void ApplyPending(StudioCharacter onto)
@@ -408,7 +748,116 @@ namespace UmMegabonkStudio
             }
             AiClient.Pending = null;
             Save();
-            _status = "Applied the model draft. Undo restores the previous character list.";
+        }
+
+        static PromptBuffer Buf(string id)
+        {
+            PromptBuffer buf;
+            if (!_buffers.TryGetValue(id, out buf))
+            {
+                buf = new PromptBuffer();
+                _buffers[id] = buf;
+            }
+            return buf;
+        }
+
+        static StudioCharacter Find(int id)
+        {
+            if (_file == null || _file.Characters == null) return null;
+            for (int i = 0; i < _file.Characters.Count; i++)
+                if (_file.Characters[i].Id == id) return _file.Characters[i];
+            return null;
+        }
+
+        static string EditedName()
+        {
+            var row = Find(_session.EditId);
+            return row == null ? "the selected character" : row.Name;
+        }
+
+        static string Blank(string value)
+        {
+            return string.IsNullOrEmpty(value) ? "(cloned)" : value;
+        }
+
+        static void Steps(string a, string b, string c, int current)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(Step(a, current == 0), _label);
+            GUILayout.Label(Step(b, current == 1), _label);
+            GUILayout.Label(Step(c, current == 2), _label);
+            GUILayout.EndHorizontal();
+        }
+
+        static string Step(string name, bool on)
+        {
+            return on ? "● " + name : "○ " + name;
+        }
+
+        static void Banner(string text, Color color)
+        {
+            var rect = GUILayoutUtility.GetRect(10f, 8f);
+            if (Event.current.type == EventType.Repaint)
+                Fill(rect, color);
+            GUILayout.Label(text, _section);
+            GUILayout.Space(6f);
+        }
+
+        static void Section(string title)
+        {
+            GUILayout.Space(12f);
+            var rect = GUILayoutUtility.GetRect(10f, 4f);
+            if (Event.current.type == EventType.Repaint)
+                Fill(rect, new Color(0.45f, 0.75f, 0.68f, 1f));
+            GUILayout.Label(title, _section);
+        }
+
+        static bool Wide(string text, Color color)
+        {
+            var previous = GUI.backgroundColor;
+            GUI.backgroundColor = color;
+            var hit = GUILayout.Button(text, _primary);
+            GUI.backgroundColor = previous;
+            GUILayout.Space(6f);
+            return hit;
+        }
+
+        static void ConnectionLine()
+        {
+            GUILayout.Space(8f);
+            if (!AiClient.TryConfig(out var baseUrl, out var model, out _, out _))
+                GUILayout.Label("No model is connected. Nothing is sent until ai.json beside characters.json has base_url and model. The key stays in MEGABONK_AI_KEY in this game process.", _label);
+            else
+                GUILayout.Label(AiClient.Status + "  Server " + baseUrl + ", model " + model + ".", _label);
+        }
+
+        static void Picker(string label, string current, string[] values, Action<string> set, bool blankLabel)
+        {
+            var open = _menu == label;
+            if (GUILayout.Button(label + ":  " + current + (open ? "    (close list)" : "    (open list)"), _button))
+            {
+                _menu = open ? "" : label;
+                _focus = _menu.Length == 0 ? null : "filter";
+                Buf("filter").Text = "";
+                Buf("filter").Caret = 0;
+                Buf("filter").Mark = 0;
+            }
+            if (!open) return;
+            GUILayout.Label("Type to narrow this list.", _label);
+            DrawBuffer("filter", 52f);
+            var filter = Buf("filter").Text ?? "";
+            for (int i = 0; i < values.Length; i++)
+            {
+                var value = values[i];
+                var shown = value.Length == 0 ? "(keep cloned)" : value;
+                if (filter.Length > 0 && shown.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                if (GUILayout.Button(shown, _button))
+                {
+                    set(blankLabel && value.Length == 0 ? "" : value);
+                    _menu = "";
+                    _focus = null;
+                }
+            }
         }
 
         static void Remember()
@@ -437,47 +886,8 @@ namespace UmMegabonkStudio
             }
             if (_index >= _file.Characters.Count) _index = 0;
             Save();
+            GoHome();
             _status = "Restored the previous character list.";
-        }
-
-        static void Fill(Rect rect, Color color)
-        {
-            var previous = GUI.color;
-            GUI.color = color;
-            GUI.DrawTexture(rect, Texture2D.whiteTexture);
-            GUI.color = previous;
-        }
-
-        static void LetterRow(Action<char> add)
-        {
-            const string letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-            GUILayout.BeginHorizontal();
-            for (int i = 0; i < letters.Length; i++)
-            {
-                if (i == 13)
-                {
-                    GUILayout.EndHorizontal();
-                    GUILayout.BeginHorizontal();
-                }
-                var ch = letters[i];
-                var shown = _lower ? char.ToLowerInvariant(ch) : ch;
-                if (GUILayout.Button(shown.ToString(), _button))
-                    add(shown);
-            }
-            GUILayout.EndHorizontal();
-        }
-
-        static void DigitRow(Action<char> add)
-        {
-            GUILayout.BeginHorizontal();
-            const string digits = "0123456789";
-            for (int i = 0; i < digits.Length; i++)
-            {
-                var ch = digits[i];
-                if (GUILayout.Button(ch.ToString(), _button))
-                    add(ch);
-            }
-            GUILayout.EndHorizontal();
         }
 
         static void Save()
@@ -491,7 +901,6 @@ namespace UmMegabonkStudio
                     var cur = _file.Characters[Math.Max(0, Math.Min(_index, _file.Characters.Count - 1))];
                     Registrar.ApplyLive(dm, Plugin.JsonPath, cur);
                 }
-                _status = "Saved. A different appearance shows after a restart. Close this panel with F7 before playing.";
             }
             catch (Exception ex)
             {
@@ -500,34 +909,61 @@ namespace UmMegabonkStudio
             }
         }
 
+        static void Fill(Rect rect, Color color)
+        {
+            var previous = GUI.color;
+            GUI.color = color;
+            GUI.DrawTexture(rect, Texture2D.whiteTexture);
+            GUI.color = previous;
+        }
+
         static void Styles()
         {
-            int size = Mathf.Clamp(Mathf.RoundToInt(Screen.height / 32f), 22, 40);
+            int size = Mathf.Clamp(Mathf.RoundToInt(Screen.height / 34f), 20, 36);
             if (_label != null && _styleSize == size) return;
             _styleSize = size;
             _label = new GUIStyle(GUI.skin.label);
             _label.fontSize = size;
             _label.wordWrap = true;
             _label.normal.textColor = Color.white;
-            _button = new GUIStyle(GUI.skin.button);
-            _button.fontSize = size;
-            _button.fixedHeight = size * 2.1f;
-            _button.wordWrap = true;
-            // This install's RectOffset has a parameterless constructor and left/right/top/bottom setters.
+            _title = new GUIStyle(_label);
+            _title.fontSize = Mathf.Clamp(size + 10, 28, 48);
+            _section = new GUIStyle(_label);
+            _section.fontSize = size + 2;
+            _well = new GUIStyle(_label);
+            _well.wordWrap = true;
+            _well.fontSize = size;
+            var pad = new RectOffset();
+            pad.left = 8;
+            pad.right = 8;
+            pad.top = 6;
+            pad.bottom = 6;
+            _well.padding = pad;
+            _button = MakeButton(size, size * 1.8f);
+            _primary = MakeButton(size + 2, size * 2.8f);
+        }
+
+        static GUIStyle MakeButton(int font, float height)
+        {
+            var style = new GUIStyle(GUI.skin.button);
+            style.fontSize = font;
+            style.fixedHeight = height;
+            style.wordWrap = true;
             var border = new RectOffset();
             border.left = 0;
             border.right = 0;
             border.top = 0;
             border.bottom = 0;
-            _button.border = border;
-            Paint(_button.normal);
-            Paint(_button.hover);
-            Paint(_button.active);
-            Paint(_button.focused);
-            Paint(_button.onNormal);
-            Paint(_button.onHover);
-            Paint(_button.onActive);
-            Paint(_button.onFocused);
+            style.border = border;
+            Paint(style.normal);
+            Paint(style.hover);
+            Paint(style.active);
+            Paint(style.focused);
+            Paint(style.onNormal);
+            Paint(style.onHover);
+            Paint(style.onActive);
+            Paint(style.onFocused);
+            return style;
         }
 
         static void Paint(GUIStyleState state)
