@@ -76,6 +76,11 @@ namespace UmMegabonkStudio
         public static void Ask(string userText, string selectedJson)
         {
             if (_busy) return;
+            if (SendPaused(out var wait))
+            {
+                Status = "Send is paused for " + wait + " seconds. Nothing was sent. Your prompt is still here.";
+                return;
+            }
             if (!TryConfig(out var baseUrl, out var model, out var keyEnv, out var error))
             {
                 Status = error;
@@ -93,6 +98,7 @@ namespace UmMegabonkStudio
         {
             string body = null;
             string failure = null;
+            var pause = 0;
             try
             {
                 var key = Environment.GetEnvironmentVariable(keyEnv);
@@ -121,7 +127,11 @@ namespace UmMegabonkStudio
                     var response = client.Send(request);
                     var text = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
                     if (!response.IsSuccessStatusCode)
-                        failure = "The model server returned " + (int)response.StatusCode + ".";
+                    {
+                        AiError.Explain((int)response.StatusCode, text, RetryAfter(response));
+                        failure = AiError.Text;
+                        pause = AiError.PauseSeconds;
+                    }
                     else
                         body = ReadContent(text);
                 }
@@ -132,9 +142,40 @@ namespace UmMegabonkStudio
             }
             lock (Gate)
             {
-                if (failure != null) _pending = "error\n" + failure;
+                if (failure != null)
+                {
+                    _pending = "error\n" + failure;
+                    if (pause > 0) PauseUntilUtc = DateTime.UtcNow.AddSeconds(pause);
+                }
                 else _pending = "ok\n" + (body ?? "");
             }
+        }
+
+        static string RetryAfter(HttpResponseMessage response)
+        {
+            try
+            {
+                if (response.Headers.TryGetValues("Retry-After", out var values))
+                {
+                    foreach (var value in values) return value;
+                }
+            }
+            catch (Exception)
+            {
+            }
+            return null;
+        }
+
+        public static bool SendPaused(out int seconds)
+        {
+            var left = PauseUntilUtc - DateTime.UtcNow;
+            if (left.TotalSeconds <= 0)
+            {
+                seconds = 0;
+                return false;
+            }
+            seconds = (int)Math.Ceiling(left.TotalSeconds);
+            return true;
         }
 
         static string ReadContent(string responseJson)
@@ -186,6 +227,7 @@ namespace UmMegabonkStudio
         }
 
         public static int Generation;
+        public static DateTime PauseUntilUtc;
 
         public static void BeginTopic(string status)
         {

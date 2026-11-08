@@ -541,6 +541,56 @@ def test_keyboard_buffer_and_create_flow_do_not_overwrite():
     assert "phase=" in (plugin / "StudioWindow.cs").read_text(encoding="utf-8")
 
 
+def test_provider_errors_map_allowlisted_codes_and_hide_the_body():
+    from um.megabonk_ai_error import explain_provider_failure
+
+    secret = "sk-live-not-a-real-key-abc123"
+    prompt = "make a gold fox with a hat"
+    leaked = json.dumps({
+        "error": {
+            "message": "Rate limit " + secret + " prompt " + prompt,
+            "type": "tokens",
+            "param": None,
+            "code": "rate_limit_exceeded",
+        }
+    })
+    limited = explain_provider_failure(429, leaked, "56")
+    assert limited["kind"] == "rate"
+    assert limited["pause_seconds"] == 56
+    assert "rate_limit_exceeded" in limited["text"]
+    assert secret not in limited["text"] and prompt not in limited["text"]
+    quota = explain_provider_failure(429, json.dumps({
+        "error": {"message": secret, "type": "insufficient_quota", "code": None},
+    }), "10")
+    assert quota["kind"] == "quota" and quota["pause_seconds"] == 0
+    assert "insufficient_quota" in quota["text"]
+    assert "rate limiting" not in quota["text"]
+    assert secret not in quota["text"]
+    credits = explain_provider_failure(429, json.dumps({
+        "error": {"code": "credit_balance_exhausted", "type": "insufficient_quota", "message": prompt},
+    }), None)
+    assert credits["kind"] == "quota" and "credit_balance_exhausted" in credits["text"]
+    assert prompt not in credits["text"]
+    denied = explain_provider_failure(401, json.dumps({
+        "error": {"message": "Incorrect API key " + secret, "code": "invalid_api_key"},
+    }), None)
+    assert denied["kind"] == "auth" and "401" in denied["text"]
+    assert secret not in denied["text"] and "invalid_api_key" not in denied["text"]
+    unknown = explain_provider_failure(429, json.dumps({
+        "error": {"code": "please_pay_now", "message": secret},
+    }), "Wed, 21 Oct 2015 07:28:00 GMT")
+    assert unknown["kind"] == "status" and unknown["pause_seconds"] == 0
+    assert "not treated as a billing limit" in unknown["text"]
+    assert "please_pay_now" not in unknown["text"] and secret not in unknown["text"]
+    assert "2015" not in unknown["text"]
+    broken = explain_provider_failure(429, "{not-json " + secret, None)
+    assert broken["pause_seconds"] == 0
+    assert secret not in broken["text"] and "billing limit" in broken["text"]
+    client = (ROOT / "examples" / "megabonk-characters" / "plugin" / "AiClient.cs").read_text(encoding="utf-8")
+    assert "AiError.Explain" in client
+    assert "SendPaused" in client
+
+
 def test_model_client_has_no_default_endpoint_and_the_panel_stays_button_only():
     plugin = ROOT / "examples" / "megabonk-characters" / "plugin"
     client = (plugin / "AiClient.cs").read_text(encoding="utf-8")

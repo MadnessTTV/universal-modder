@@ -389,7 +389,7 @@ namespace UmMegabonkStudio
             Banner("New character. Nobody already in the list is replaced.", new Color(0.12f, 0.28f, 0.22f, 1f));
             GUILayout.Label("Click the box and type. Enter starts a new line. Arrows move the caret. Esc gives keys back to the game.", _label);
             DrawBuffer("create", 180f);
-            if (Wide(AiClient.Busy ? "Waiting for the model" : "Send description", new Color(0.55f, 0.86f, 0.70f, 1f)) && !AiClient.Busy)
+            if (OfferSend("Send description") )
                 SendPrompt(Buf("create"), "");
             ConnectionLine();
         }
@@ -406,7 +406,7 @@ namespace UmMegabonkStudio
                 GUILayout.Label("Question: " + question, _label);
             GUILayout.Label("Type the answers below.", _label);
             DrawBuffer("answer", 140f);
-            if (Wide(AiClient.Busy ? "Waiting for the model" : "Send answers", new Color(0.55f, 0.86f, 0.70f, 1f)) && !AiClient.Busy)
+            if (OfferSend("Send answers"))
                 SendPrompt(Buf("answer"), ContextForIntent());
         }
 
@@ -442,7 +442,7 @@ namespace UmMegabonkStudio
             var created = Find(_session.EditId);
             Banner("This changes " + (created == null ? "the new character" : created.Name) + " only. It does not create another character and does not change the others.", new Color(0.12f, 0.28f, 0.22f, 1f));
             DrawBuffer("refine", 160f);
-            if (Wide(AiClient.Busy ? "Waiting for the model" : "Send refinement", new Color(0.55f, 0.86f, 0.70f, 1f)) && !AiClient.Busy)
+            if (OfferSend("Send refinement"))
                 SendPrompt(Buf("refine"), created == null ? "" : JsonSerializer.Serialize(created));
         }
 
@@ -815,6 +815,17 @@ namespace UmMegabonkStudio
         static void Section(string title)
         {
             GUILayout.Label(title, _section);
+        }
+
+        static bool OfferSend(string label)
+        {
+            int seconds;
+            if (AiClient.SendPaused(out seconds))
+            {
+                GUILayout.Label("Send is paused for " + seconds + " seconds. Your prompt is still here.", _label);
+                return false;
+            }
+            return Wide(AiClient.Busy ? "Waiting for the model" : label, new Color(0.55f, 0.86f, 0.70f, 1f)) && !AiClient.Busy;
         }
 
         static bool Wide(string text, Color color)
