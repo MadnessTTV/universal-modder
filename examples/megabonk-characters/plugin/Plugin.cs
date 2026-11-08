@@ -14,6 +14,7 @@ namespace UmMegabonkStudio
         public const string Guid = "um.megabonk.studio";
         internal static ManualLogSource LogSource;
         internal static string JsonPath;
+        internal static bool UiStopped;
         static bool _uiDead;
 
         public override void Load()
@@ -36,6 +37,11 @@ namespace UmMegabonkStudio
             }
             PatchText(harmony, nameof(UnlockableBase.GetName), nameof(Hooks.NamePrefix));
             PatchText(harmony, nameof(UnlockableBase.GetDescription), nameof(Hooks.DescriptionPrefix));
+            var saveLoad = AccessTools.Method(typeof(SaveManager), "Load", new System.Type[] { typeof(bool) });
+            if (saveLoad != null)
+                harmony.Patch(saveLoad, postfix: new HarmonyMethod(typeof(Hooks), nameof(Hooks.AfterSaveLoad)));
+            else
+                Warn("SaveManager.Load(bool) was not found. Skin indexes are recorded only at character registration.");
             var tryInit = AccessTools.Method(typeof(CharacterMenu), "TryInit");
             if (tryInit != null)
                 harmony.Patch(tryInit, postfix: new HarmonyMethod(typeof(Hooks), nameof(Hooks.AfterMenuInit)));
@@ -70,8 +76,9 @@ namespace UmMegabonkStudio
         {
             if (_uiDead) return;
             _uiDead = true;
-            LogSource.LogError("Studio UI stopped during " + where + ": " + ex);
-            LogSource.LogError("The clone registration is separate. Edit characters.json with `um megabonk studio` and restart.");
+            UiStopped = true;
+            LogSource.LogError("Studio UI stopped during " + where + ": " + ex.GetType().Name + " " + ex.Message);
+            LogSource.LogError("OnGUI will not run again this session, so it cannot keep capturing input. Edit characters.json with `um megabonk studio` and restart.");
         }
     }
 
@@ -88,6 +95,11 @@ namespace UmMegabonkStudio
             {
                 Plugin.Warn("Studio registration failed: " + ex);
             }
+        }
+
+        public static void AfterSaveLoad(SaveManager __instance, bool loadBackup)
+        {
+            Registrar.EnsureSaveSkinIndexes();
         }
 
         public static void AfterMenuInit()

@@ -5,19 +5,20 @@ using UnityEngine;
 
 namespace UmMegabonkStudio
 {
-    // IMGUI editor. OnGUI running in this game was not verified when this source was written.
-    // The first successful frame logs "Studio UI OnGUI ran". Until that line is in LogOutput.log,
-    // use `um megabonk studio` and restart.
+    // IMGUI on this build cannot use a text box. TextEditor.SaveBackup is stripped and throws
+    // Method unstripping failed, and the exception used to skip EndScrollView, which then
+    // spammed "pushing more GUIClips than popping". Editing is buttons only.
     public class StudioBehaviour : MonoBehaviour
     {
         public StudioBehaviour(IntPtr ptr) : base(ptr) { }
 
         void Update()
         {
+            if (Plugin.UiStopped) return;
             try
             {
                 if (UnityEngine.Input.GetKeyDown(KeyCode.F7))
-                    StudioWindow.Toggle();
+                    StudioWindow.RequestToggle();
             }
             catch (Exception ex)
             {
@@ -27,20 +28,33 @@ namespace UmMegabonkStudio
 
         void OnGUI()
         {
+            if (Plugin.UiStopped) return;
             try { StudioWindow.Draw(); }
-            catch (Exception ex) { Plugin.FailUi("OnGUI", ex); }
+            catch (Exception ex)
+            {
+                StudioWindow.EndOpenGroups();
+                Plugin.FailUi("OnGUI", ex);
+            }
         }
     }
 
     static class StudioWindow
     {
         static bool _open;
-        static Rect _rect = new Rect(40f, 40f, 560f, 640f);
-        static Vector2 _scroll;
+        static bool _wasOpen;
+        static bool _area;
+        static bool _scroll;
+        static int _toggleFrame = -2;
+        static Rect _rect;
+        static Vector2 _scrollPos;
         static int _index;
         static StudioFile _file;
-        static bool _drew;
-        static string _status = "F7 toggles this window. Edits save to characters.json.";
+        static bool _logged;
+        static bool _editName;
+        static string _status = "The editor is closed until you press F7.";
+        static GUIStyle _label;
+        static GUIStyle _button;
+        static int _styleSize;
 
         public static void Install()
         {
@@ -49,12 +63,52 @@ namespace UmMegabonkStudio
             UnityEngine.Object.DontDestroyOnLoad(go);
             go.hideFlags = HideFlags.HideAndDontSave;
             go.AddComponent<StudioBehaviour>();
+            Plugin.Info("Studio editor is closed. Press F7 to open it. Nothing is drawn while it is closed.");
         }
 
-        public static void Toggle()
+        public static void RequestToggle()
         {
+            if (Plugin.UiStopped) return;
+            if (Time.frameCount == _toggleFrame) return;
+            _toggleFrame = Time.frameCount;
             _open = !_open;
-            if (_open) Reload();
+            if (_open)
+            {
+                Reload();
+                _editName = false;
+                Plugin.Info("Studio editor opened.");
+            }
+            else
+            {
+                ReleaseInput();
+                Plugin.Info("Studio editor closed.");
+            }
+        }
+
+        public static void EndOpenGroups()
+        {
+            if (_scroll)
+            {
+                _scroll = false;
+                try { GUILayout.EndScrollView(); } catch (Exception) { }
+            }
+            if (_area)
+            {
+                _area = false;
+                try { GUILayout.EndArea(); } catch (Exception) { }
+            }
+            ReleaseInput();
+            _open = false;
+        }
+
+        static void ReleaseInput()
+        {
+            try
+            {
+                GUIUtility.keyboardControl = 0;
+                GUIUtility.hotControl = 0;
+            }
+            catch (Exception) { }
         }
 
         static void Reload()
@@ -64,92 +118,126 @@ namespace UmMegabonkStudio
 
         public static void Draw()
         {
-            if (!_drew)
+            if (!_logged)
             {
-                _drew = true;
+                _logged = true;
                 Plugin.Info("Studio UI OnGUI ran.");
             }
-            if (!_open) return;
-            if (_file == null) Reload();
-            GUI.Box(_rect, "Megabonk Studio");
-            GUILayout.BeginArea(new Rect(_rect.x + 8f, _rect.y + 28f, _rect.width - 16f, _rect.height - 36f));
-            DrawBody(0);
-            GUILayout.EndArea();
-            var e = Event.current;
-            var bar = new Rect(_rect.x, _rect.y, _rect.width, 24f);
-            if (e != null && e.type == EventType.MouseDrag && bar.Contains(e.mousePosition))
+            var ev = Event.current;
+            if (ev != null && ev.type == EventType.KeyDown && ev.keyCode == KeyCode.F7)
             {
-                _rect.x += e.delta.x;
-                _rect.y += e.delta.y;
+                RequestToggle();
+                ev.Use();
+                return;
+            }
+            if (!_open)
+            {
+                if (_wasOpen) ReleaseInput();
+                _wasOpen = false;
+                return;
+            }
+            _wasOpen = true;
+            Styles();
+            _area = false;
+            _scroll = false;
+            _rect = new Rect(Screen.width * 0.08f, Screen.height * 0.06f, Screen.width * 0.84f, Screen.height * 0.88f);
+            GUILayout.BeginArea(_rect, GUI.skin.window);
+            _area = true;
+            try
+            {
+                _scrollPos = GUILayout.BeginScrollView(_scrollPos);
+                _scroll = true;
+                try { DrawBody(); }
+                finally
+                {
+                    GUILayout.EndScrollView();
+                    _scroll = false;
+                }
+            }
+            finally
+            {
+                GUILayout.EndArea();
+                _area = false;
             }
         }
 
-        static void DrawBody(int id)
+        static void DrawBody()
         {
-            _scroll = GUILayout.BeginScrollView(_scroll);
-            GUILayout.Label("Clones a vanilla character. New abilities are existing passives. A brand-new effect is not created here.");
-            GUILayout.Label("A different appearance applies on the next launch. Passive, weapon, tint and stats apply to the next run.");
-            GUILayout.Label(_status);
+            GUILayout.Label("Megabonk Studio", _label);
+            GUILayout.Label("F7 or Close hides this panel. While it is closed, this plugin does not draw and does not keep a text cursor.", _label);
+            GUILayout.Label(_status, _label);
+            if (GUILayout.Button("Close (F7)", _button))
+                RequestToggle();
+            if (_file == null) Reload();
             var rows = _file.Characters;
-            if (rows.Count == 0) GUILayout.Label("No characters in " + Plugin.JsonPath);
+            if (rows.Count == 0) GUILayout.Label("No characters in " + Plugin.JsonPath, _label);
             for (int i = 0; i < rows.Count; i++)
             {
-                if (GUILayout.Button((i == _index ? "> " : "  ") + rows[i].Name + "  (" + rows[i].Appearance + ")"))
+                var mark = i == _index ? "Selected: " : "Select: ";
+                if (GUILayout.Button(mark + rows[i].Name + "    look " + rows[i].Appearance, _button))
                     _index = i;
             }
-            if (GUILayout.Button("New character"))
+            if (rows.Count == 0) return;
+            if (_index < 0 || _index >= rows.Count) _index = 0;
+            var cur = rows[_index];
+            GUILayout.Label("Appearance, passive, and weapon are the game's existing ones. Click a row to change it.", _label);
+            if (GUILayout.Button("Appearance:  " + cur.Appearance, _button))
+                cur.Appearance = Step(Catalog.Characters, cur.Appearance, 1);
+            if (GUILayout.Button("Passive:  " + (string.IsNullOrEmpty(cur.Passive) ? "keep " + cur.Appearance : cur.Passive), _button))
+                cur.Passive = Step(WithBlank(Catalog.Passives), cur.Passive, 1);
+            if (GUILayout.Button("Weapon:  " + (string.IsNullOrEmpty(cur.Weapon) ? "keep " + cur.Appearance : cur.Weapon), _button))
+                cur.Weapon = Step(WithBlank(Catalog.Weapons), cur.Weapon, 1);
+            GUILayout.Label("Name:  " + cur.Name, _label);
+            if (GUILayout.Button(_editName ? "Done editing name" : "Edit name", _button))
+                _editName = !_editName;
+            if (_editName) NameKeys(cur);
+            GUILayout.Label("Extra stats on top of " + cur.Appearance + ". The buttons change the number. Nothing here uses a text box.", _label);
+            if (cur.Stats == null) cur.Stats = new List<StudioStat>();
+            for (int i = 0; i < cur.Stats.Count; i++)
             {
-                var row = new StudioCharacter
+                var stat = cur.Stats[i];
+                GUILayout.Label(stat.Stat + "  " + stat.Modify + "  " + stat.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), _label);
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button(stat.Stat, _button))
+                    stat.Stat = Step(Catalog.Stats, stat.Stat, 1);
+                if (GUILayout.Button("-1", _button)) stat.Amount -= 1f;
+                if (GUILayout.Button("+1", _button)) stat.Amount += 1f;
+                if (GUILayout.Button("-0.1", _button)) stat.Amount -= 0.1f;
+                if (GUILayout.Button("+0.1", _button)) stat.Amount += 0.1f;
+                if (GUILayout.Button("Remove", _button))
                 {
-                    Id = NextId(rows),
-                    Name = "New character",
-                    Description = "Cloned from Fox.",
-                    Author = "local",
-                    Appearance = "Fox",
-                };
-                rows.Add(row);
-                _index = rows.Count - 1;
-            }
-            if (rows.Count > 0)
-            {
-                if (_index < 0 || _index >= rows.Count) _index = 0;
-                var cur = rows[_index];
-                GUILayout.Label("Id " + cur.Id + " (id is fixed)");
-                GUILayout.Label("Name");
-                cur.Name = GUILayout.TextField(cur.Name ?? "");
-                GUILayout.Label("Description");
-                cur.Description = GUILayout.TextArea(cur.Description ?? "", GUILayout.MinHeight(48f));
-                Cycle("Appearance", Catalog.Characters, cur.Appearance, value => cur.Appearance = value);
-                Cycle("Passive (blank keeps the clone)", WithBlank(Catalog.Passives), cur.Passive, value => cur.Passive = value);
-                Cycle("Weapon (blank keeps the clone)", WithBlank(Catalog.Weapons), cur.Weapon, value => cur.Weapon = value);
-                GUILayout.Label("Tint #RRGGBB, or empty");
-                cur.Tint = GUILayout.TextField(cur.Tint ?? "");
-                GUILayout.Label("Extra stats, on top of " + cur.Appearance);
-                if (cur.Stats == null) cur.Stats = new List<StudioStat>();
-                for (int i = 0; i < cur.Stats.Count; i++)
-                {
-                    var stat = cur.Stats[i];
-                    GUILayout.BeginHorizontal();
-                    if (GUILayout.Button(stat.Stat, GUILayout.Width(220f)))
-                        stat.Stat = Step(Catalog.Stats, stat.Stat, 1);
-                    if (GUILayout.Button(stat.Modify, GUILayout.Width(140f)))
-                        stat.Modify = Step(Catalog.ModifyTypes, stat.Modify, 1);
-                    var amount = GUILayout.TextField(stat.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), GUILayout.Width(80f));
-                    if (float.TryParse(amount, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var number))
-                        stat.Amount = number;
-                    if (GUILayout.Button("x", GUILayout.Width(28f)))
-                    {
-                        cur.Stats.RemoveAt(i);
-                        i--;
-                    }
-                    GUILayout.EndHorizontal();
+                    cur.Stats.RemoveAt(i);
+                    i--;
                 }
-                if (GUILayout.Button("Add stat"))
-                    cur.Stats.Add(new StudioStat { Stat = "MaxHealth", Modify = "Addition", Amount = 0f });
+                GUILayout.EndHorizontal();
             }
-            if (GUILayout.Button("Save"))
+            if (GUILayout.Button("Add stat", _button))
+                cur.Stats.Add(new StudioStat { Stat = "MaxHealth", Modify = "Addition", Amount = 0f });
+            if (GUILayout.Button("Save", _button))
                 Save();
-            GUILayout.EndScrollView();
+        }
+
+        static void NameKeys(StudioCharacter cur)
+        {
+            const string letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            GUILayout.BeginHorizontal();
+            for (int i = 0; i < letters.Length; i++)
+            {
+                if (i == 13)
+                {
+                    GUILayout.EndHorizontal();
+                    GUILayout.BeginHorizontal();
+                }
+                var ch = letters.Substring(i, 1);
+                if (GUILayout.Button(ch, _button))
+                    cur.Name = (cur.Name ?? "") + ch;
+            }
+            GUILayout.EndHorizontal();
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Space", _button)) cur.Name = (cur.Name ?? "") + " ";
+            if (GUILayout.Button("Backspace", _button) && !string.IsNullOrEmpty(cur.Name))
+                cur.Name = cur.Name.Substring(0, cur.Name.Length - 1);
+            GUILayout.EndHorizontal();
         }
 
         static void Save()
@@ -163,7 +251,7 @@ namespace UmMegabonkStudio
                     var cur = _file.Characters[Math.Max(0, Math.Min(_index, _file.Characters.Count - 1))];
                     Registrar.ApplyLive(dm, Plugin.JsonPath, cur);
                 }
-                _status = "Saved. Restart so a new character or a new appearance shows in the grid.";
+                _status = "Saved. A different appearance shows after a restart. Close this panel with F7 before playing.";
             }
             catch (Exception ex)
             {
@@ -172,21 +260,31 @@ namespace UmMegabonkStudio
             }
         }
 
-        static void Cycle(string label, string[] values, string current, Action<string> set)
+        static void Styles()
         {
-            GUILayout.BeginHorizontal();
-            GUILayout.Label(label, GUILayout.Width(220f));
-            if (GUILayout.Button("<", GUILayout.Width(28f))) set(Step(values, current, -1));
-            GUILayout.Label(string.IsNullOrEmpty(current) ? "(cloned)" : current, GUILayout.Width(180f));
-            if (GUILayout.Button(">", GUILayout.Width(28f))) set(Step(values, current, 1));
-            GUILayout.EndHorizontal();
+            int size = Mathf.Clamp(Mathf.RoundToInt(Screen.height / 32f), 22, 40);
+            if (_label != null && _styleSize == size) return;
+            _styleSize = size;
+            _label = new GUIStyle(GUI.skin.label);
+            _label.fontSize = size;
+            _label.wordWrap = true;
+            _button = new GUIStyle(GUI.skin.button);
+            _button.fontSize = size;
+            _button.fixedHeight = size * 2.1f;
         }
 
         static string Step(string[] values, string current, int dir)
         {
-            int i = Catalog.IndexOf(values, current);
-            if (i < 0) i = 0;
-            else i = (i + dir + values.Length) % values.Length;
+            int i = 0;
+            for (int n = 0; n < values.Length; n++)
+            {
+                if (string.Equals(values[n], current ?? "", StringComparison.OrdinalIgnoreCase))
+                {
+                    i = n;
+                    break;
+                }
+            }
+            i = (i + dir + values.Length) % values.Length;
             return values[i];
         }
 
@@ -196,14 +294,6 @@ namespace UmMegabonkStudio
             next[0] = "";
             Array.Copy(values, 0, next, 1, values.Length);
             return next;
-        }
-
-        static int NextId(List<StudioCharacter> rows)
-        {
-            int id = 1842201100;
-            foreach (var row in rows)
-                if (row.Id >= id) id = row.Id + 1;
-            return id;
         }
     }
 }

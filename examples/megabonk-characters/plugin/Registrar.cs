@@ -2,13 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using Assets.Scripts._Data.Hats;
 using Assets.Scripts.Inventory__Items__Pickups.AbilitiesPassive;
 using Assets.Scripts.Inventory__Items__Pickups.Stats;
 using Assets.Scripts.Menu.Shop;
 using Assets.Scripts.Saves___Serialization.Progression.Achievements;
 using Il2CppInterop.Runtime.InteropTypes;
-using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnityEngine;
 // A using alias ignores other usings in this file, so StatModifier must be qualified.
 // Metadata: Assets.Scripts.Inventory__Items__Pickups.Stats.StatModifier.
@@ -109,27 +107,23 @@ namespace UmMegabonkStudio
             AssignPassive(dm, clone, source, draft.Passive);
             AssignWeapon(dm, clone, source, draft.Weapon);
             live.Skin = CopySkin(dm, appearance, id, draft);
-            var portrait = TryPortrait(jsonPath, draft.Portrait);
-            if (portrait != null) clone.icon = (Texture)portrait;
             try { clone.Init(); }
             catch (Exception ex) { Plugin.Warn("'" + draft.Name + "' Init() threw: " + ex.Message); }
+            // Init can rebuild visuals from the new id. These fields are the ones this install
+            // lists on CharacterData. Copy them from the vanilla source after Init.
+            CopyVisuals(source, clone, TryPortrait(jsonPath, draft.Portrait));
 
             Remember(clone, draft.Name, draft.Description ?? "");
             if (live.Skin != null) Remember(live.Skin, draft.Name, draft.Description ?? "");
             dm.characterData[id] = clone;
             dm.unsortedCharacterData.Add(clone);
-            if (dm.skinData != null && live.Skin != null)
-            {
-                var skins = new Il2CppSystem.Collections.Generic.List<SkinData>();
-                skins.Add(live.Skin);
-                dm.skinData[id] = skins;
-            }
-            try { CopyHats(dm, appearance, id); }
-            catch (Exception ex) { Plugin.Warn("Hat placements for '" + draft.Name + "' were not copied: " + ex.Message); }
+            PublishSkin(dm, id, live.Skin);
             ById[draft.Id] = live;
+            EnsureSaveSkinIndexes();
             Plugin.Info("Registered '" + draft.Name + "' id " + draft.Id + " cloned from " + draft.Appearance
                 + ", passive " + (string.IsNullOrEmpty(draft.Passive) ? "(cloned)" : draft.Passive)
-                + ", weapon " + (string.IsNullOrEmpty(draft.Weapon) ? "(cloned)" : draft.Weapon) + ".");
+                + ", weapon " + (string.IsNullOrEmpty(draft.Weapon) ? "(cloned)" : draft.Weapon)
+                + ", prefab " + (clone.prefab == null ? "NULL" : clone.prefab.name) + ".");
             return true;
         }
 
@@ -149,8 +143,6 @@ namespace UmMegabonkStudio
             WriteStats(live.Data, live, draft);
             AssignPassive(dm, live.Data, dm.characterData[live.Appearance], draft.Passive);
             AssignWeapon(dm, live.Data, dm.characterData[live.Appearance], draft.Weapon);
-            if (live.Skin != null && TryTint(draft.Tint, out var tint))
-                TintMaterials(live.Skin, tint);
             Plugin.Info("Updated '" + draft.Name + "' for the next run. A new appearance still needs a restart.");
         }
 
@@ -252,62 +244,76 @@ namespace UmMegabonkStudio
             unlock.author = string.IsNullOrWhiteSpace(draft.Author) ? "local" : draft.Author;
             unlock.price = 0;
             unlock.isEnabled = true;
-            if (TryTint(draft.Tint, out var tint)) TintMaterials(copy, tint);
+            // Keep the vanilla material array by reference. Replacing it removed the visible model
+            // in the 2cdd99a playtest. Do not recolor those shared materials.
+            copy.materials = source.materials;
             return copy;
         }
 
-        static void TintMaterials(SkinData skin, Color tint)
+        // PlayerRenderer.SetCharacter indexes a dictionary by ECharacter. DataManager.GetSkins is
+        // that skinData lookup, and the save file has a second dictionary, characterSkins.
+        // The community loader inserts both. A missing key is the KeyNotFoundException seen for
+        // ids 1842201002 and 1842201003.
+        static void PublishSkin(DataManager dm, ECharacter id, SkinData skin)
         {
-            var mats = skin.materials;
-            if (mats == null) return;
-            var next = new Il2CppReferenceArray<Material>(mats.Length);
-            for (int i = 0; i < mats.Length; i++)
+            if (dm.skinData == null || skin == null)
             {
-                var src = mats[i];
-                if (src == null) continue;
-                var made = new Material(src);
-                made.name = src.name + " (studio)";
-                made.hideFlags = HideFlags.DontUnloadUnusedAsset;
-                TintProperty(made, "_Color", tint);
-                TintProperty(made, "_AlbedoColor", tint);
-                next[i] = made;
+                Plugin.Warn("No skinData entry for id " + (int)id + ". SetCharacter will throw KeyNotFoundException.");
+                return;
             }
-            skin.materials = next;
-        }
-
-        static void TintProperty(Material mat, string property, Color tint)
-        {
-            if (!mat.HasProperty(property)) return;
-            var color = mat.GetColor(property);
-            mat.SetColor(property, new Color(color.r * tint.r, color.g * tint.g, color.b * tint.b, color.a));
-        }
-
-        static void CopyHats(DataManager dm, ECharacter appearance, ECharacter id)
-        {
-            var hats = dm.unsortedHats;
-            if (hats == null) return;
-            for (int i = 0; i < hats.Count; i++)
+            if (!dm.skinData.ContainsKey(id))
             {
-                var hat = hats[i];
-                if (hat == null || hat.orientations == null) continue;
-                HatOrientation from = null;
-                bool already = false;
-                for (int j = 0; j < hat.orientations.Count; j++)
+                var list = new Il2CppSystem.Collections.Generic.List<SkinData>();
+                list.Add(skin);
+                dm.skinData.Add(id, list);
+            }
+            if (dm.unsortedSkins != null)
+            {
+                bool found = false;
+                for (int i = 0; i < dm.unsortedSkins.Count; i++)
                 {
-                    var row = hat.orientations[j];
-                    if (row == null) continue;
-                    if (row.character == id) already = true;
-                    else if (row.character == appearance) from = row;
+                    if (dm.unsortedSkins[i] == skin) found = true;
                 }
-                if (already || from == null) continue;
-                var neu = new HatOrientation();
-                neu.character = id;
-                neu.meshForHat = from.meshForHat;
-                neu.pos = from.pos;
-                neu.rot = from.rot;
-                neu.scale = from.scale;
-                hat.orientations.Add(neu);
+                if (!found) dm.unsortedSkins.Add(skin);
             }
+            Plugin.Info("skinData contains " + (int)id + ": " + dm.skinData.ContainsKey(id));
+        }
+
+        public static void EnsureSaveSkinIndexes()
+        {
+            try
+            {
+                var save = SaveManager.Instance;
+                if (save == null || save.config == null || save.config.preferences == null) return;
+                var map = save.config.preferences.characterSkins;
+                if (map == null) return;
+                foreach (var pair in ById)
+                {
+                    var id = (ECharacter)pair.Key;
+                    if (!map.ContainsKey(id))
+                        map.Add(id, 0);
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Warn("Skin index was not recorded: " + ex.Message);
+            }
+        }
+
+        static void CopyVisuals(CharacterData source, CharacterData clone, Texture2D portrait)
+        {
+            clone.prefab = source.prefab;
+            clone.meshDefault = source.meshDefault;
+            clone.meshLow = source.meshLow;
+            clone.meshLowest = source.meshLowest;
+            clone.audioFootsteps = source.audioFootsteps;
+            clone.themeSong = source.themeSong;
+            clone.colliderHeight = source.colliderHeight;
+            clone.colliderWidth = source.colliderWidth;
+            clone.categoryScores = source.categoryScores;
+            clone.categoryRatios = source.categoryRatios;
+            clone.StatCategoryRatios = source.StatCategoryRatios;
+            clone.icon = portrait != null ? (Texture)portrait : source.icon;
         }
 
         static Texture2D TryPortrait(string jsonPath, string relative)

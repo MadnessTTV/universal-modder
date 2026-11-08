@@ -20,7 +20,11 @@ powershell -File examples\megabonk-characters\plugin\build.ps1 -Install
 
 That reads `%APPDATA%\Thunderstore Mod Manager\DataFolder\Megabonk\profiles\Default\BepInEx`, checks the interop DLLs, and builds `UmMegabonkStudio.dll`. `-Install` copies it to `BepInEx\plugins\UmMegabonkStudio\` and, only if you do not already have one, copies `studio/characters.json` (Lumen cloned from Fox, Bulwark from Megachad, Flicker from Ninja).
 
-Restart the game. In `BepInEx\LogOutput.log` look for `Registered 'Lumen'` and `Studio UI OnGUI ran`. Press **F7** for the editor. That window has not been seen in the game yet. If OnGUI never logs, edit the json and restart:
+Restart with the game already closed. In `BepInEx\LogOutput.log` look for `Registered 'Lumen'`, `skinData contains`, and `prefab` not `NULL`. The editor stays closed until **F7**. It has no text boxes. Appearance, passive, weapon, and stat amounts are buttons. **Close (F7)** hides it. While it is closed the plugin does not draw. Confirm the interact control in a normal run with the panel closed, on a vanilla character and on a studio character. The panel was not watched on a machine here. A missing model or a red error still means paste the new log line, not a DLL.
+
+The `2cdd99a` build did run. Its text boxes threw `Method unstripping failed` in `TextEditor.SaveBackup` and then spilled GUI clip errors. `PlayerRenderer.SetCharacter` threw `KeyNotFoundException` for character ids 1842201002 and 1842201003. This source removes the text boxes and registers `skinData` plus the save's `characterSkins` index for each clone. That combination has not been run yet.
+
+If OnGUI never logs, edit the json and restart:
 
 ```bash
 um megabonk studio validate studio/characters.json
