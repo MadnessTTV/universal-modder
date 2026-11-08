@@ -9,6 +9,10 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <!-- net6.0 stays so BepInEx's .NET 6.0.7 host can load the DLL.
+         SDK 10 can compile that target. NETSDK1138 is the EOL notice for net6.0:
+         https://learn.microsoft.com/en-us/dotnet/core/tools/sdk-errors/netsdk1138 -->
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
   </PropertyGroup>
 
   <!-- Game and BepInEx DLLs stay on the machine that owns Megabonk. Nothing here copies them. -->

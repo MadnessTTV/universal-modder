@@ -4,7 +4,15 @@
 
 The installed editor is Unity 6000.6.8f1. AssetBundles for this game have to be built with 2023.2.22f1, which is not installed. The studio does not build a bundle. It clones a vanilla character at runtime, which is how a current Megabonk character mod adds someone selectable, and then changes the name, an existing passive, an existing weapon, extra stats, and a tint.
 
-The plugin source is `plugin/`. It was not compiled here: this environment has no .NET SDK and no game DLLs, and those DLLs stay on your PC. On the Galaxy Book:
+The plugin source is `plugin/`. It was not compiled here. The project stays `net6.0` so BepInEx's .NET 6.0.7 host can load the DLL. Compiling that target needs an SDK. `C:\Program Files\dotnet\dotnet.exe` with an empty `dotnet --list-sdks` is the runtime only.
+
+Install the current long-term SDK, .NET 10, which Microsoft documents as able to build older targets including `net6.0`. Support runs until 15 November 2028. The .NET 6 SDK left support on 13 November 2024. Do not install it. .NET 8 and .NET 9 leave support on 11 November 2026.
+
+```powershell
+winget install Microsoft.DotNet.SDK.10
+```
+
+That command is the one on [Install .NET on Windows](https://learn.microsoft.com/en-us/dotnet/core/install/windows). Install it with administrative privileges. Open a new terminal afterward. The SDK adds itself beside the existing `dotnet.exe`. The first build restores `Microsoft.NETCore.App.Ref` for `net6.0` from nuget.org. That package is the compile-time reference surface. It is not copied into the plugin, and the system .NET 10 runtime does not replace BepInEx's host.
 
 ```powershell
 powershell -File examples\megabonk-characters\plugin\build.ps1 -Install

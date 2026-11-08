@@ -157,7 +157,10 @@ Runtime clones (no Unity editor)
   CharacterData at runtime (the same Instantiate path a current character mod uses), then
   sets the name, an existing passive, an existing weapon, extra stat modifiers, and an
   optional #RRGGBB tint on _Color and _AlbedoColor when those properties exist.
-  Compile it on the PC that has the interop DLLs:
+  The game PC's dotnet.exe can be a runtime with an empty `dotnet --list-sdks`.
+  Install the .NET 10 SDK (LTS until 15 November 2028). Leave TargetFramework net6.0.
+  Do not install the .NET 6 SDK (support ended 13 November 2024).
+    winget install Microsoft.DotNet.SDK.10
     powershell -File examples/megabonk-characters/plugin/build.ps1 -Install
   Drafts live in BepInEx/plugins/UmMegabonkStudio/characters.json
   (`um megabonk studio`). F7 is the in-game editor. That window has not been seen in the

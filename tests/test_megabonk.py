@@ -332,6 +332,16 @@ def test_plugin_catalog_matches_the_python_enums():
         assert member in plugin
 
 
+def test_build_script_requires_the_net10_sdk_and_keeps_net6():
+    script = (ROOT / "examples" / "megabonk-characters" / "plugin" / "build.ps1").read_text(encoding="utf-8")
+    project = (ROOT / "examples" / "megabonk-characters" / "plugin" / "UmMegabonkStudio.csproj").read_text(encoding="utf-8")
+    assert "Microsoft.DotNet.SDK.10" in script
+    assert "dotnet --list-sdks" in script
+    assert "Install the .NET 6 SDK" not in script
+    assert "<TargetFramework>net6.0</TargetFramework>" in project
+    assert "<CheckEolTargetFramework>false</CheckEolTargetFramework>" in project
+
+
 def test_doctor_on_an_empty_folder_lists_the_missing_files(tmp_path):
     report = doctor(tmp_path / "nope")
     assert report["blockers"]

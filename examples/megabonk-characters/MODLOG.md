@@ -17,4 +17,5 @@
 - Unity Hub's editor is 6000.6.8f1. That cannot build a 2023.2.22f1 AssetBundle.
 - A current character mod (Guz) clones `CharacterData` with `Object.Instantiate`, assigns a free `eCharacter`, copies one skin, and points the weapon at an existing `DataManager.weapons` entry. Tint multiplies `_Color` on a copied material. The field note also names `_AlbedoColor` for the toon shader. The studio plugin does both properties when `HasProperty` is true.
 - Plugin source is `plugin/`. It is not compiled in this environment. `build.ps1` compiles it against the profile's interop and does not upload those DLLs. F7 IMGUI is in the source. It is unverified until `Studio UI OnGUI ran` shows up in `LogOutput.log`.
+- The game PC has `dotnet.exe` and an empty `dotnet --list-sdks`. That is the runtime. The build script stops there and prints `winget install Microsoft.DotNet.SDK.10`. TargetFramework stays `net6.0`. The .NET 6 SDK is not requested.
 - `um megabonk studio` edits the same `characters.json`. That path is tested here.
