@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>UmMegabonkStudio</AssemblyName>
+    <RootNamespace>UmMegabonkStudio</RootNamespace>
+    <Version>0.3.6</Version>
+    <LangVersion>10</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <!-- net6.0 stays so BepInEx's .NET 6.0.7 host can load the DLL.
+         SDK 10 can compile that target. NETSDK1138 is the EOL notice for net6.0:
+         https://learn.microsoft.com/en-us/dotnet/core/tools/sdk-errors/netsdk1138 -->
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+  </PropertyGroup>
+
+  <!-- Game and BepInEx DLLs stay on the machine that owns Megabonk. Nothing here copies them. -->
+  <ItemGroup>
+    <Reference Include="BepInEx.Core"><HintPath>$(MegabonkBepInEx)\core\BepInEx.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepInEx.Unity.IL2CPP"><HintPath>$(MegabonkBepInEx)\core\BepInEx.Unity.IL2CPP.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(MegabonkBepInEx)\core\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2CppInterop.Runtime"><HintPath>$(MegabonkBepInEx)\core\Il2CppInterop.Runtime.dll</HintPath><Private>false</Private></Reference>
+    <!-- Assembly-CSharp and the Unity modules extend Il2CppSystem.Object. Without this
+         reference the compiler reports CS0012, then CS0234 for Il2CppSystem.Collections
+         and CS0246 for game types whose bases it could not load. -->
+    <Reference Include="Il2Cppmscorlib"><HintPath>$(MegabonkBepInEx)\interop\Il2Cppmscorlib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(MegabonkBepInEx)\interop\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(MegabonkBepInEx)\interop\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(MegabonkBepInEx)\interop\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.IMGUIModule"><HintPath>$(MegabonkBepInEx)\interop\UnityEngine.IMGUIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(MegabonkBepInEx)\interop\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
+    <!-- CharacterData.audioFootsteps is AudioClip[]. That type lives in AudioModule.
+         CoreModule does not re-export it, so the compiler reports CS0012 until this is referenced. -->
+    <Reference Include="UnityEngine.AudioModule"><HintPath>$(MegabonkBepInEx)\interop\UnityEngine.AudioModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>

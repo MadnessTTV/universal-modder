@@ -5185,6 +5185,43 @@
   ]
  },
  {
+  "path": "games/megabonk/character-definitions-for-the-custom-character-loader.md",
+  "kind": "game",
+  "title": "Character definitions for Megabonk's custom-character loader",
+  "game": "Megabonk",
+  "game_version": "not launched here; public notes say Steam app 3405340, build 21750826, shown as 1.0.69",
+  "platform": "windows",
+  "engine": "unity-il2cpp",
+  "route": "loader-api",
+  "tools": [
+   "um megabonk",
+   "UmMegabonkStudio (source, not compiled here)",
+   "BepInEx 6.0.0-be.788 on the owner's PC",
+   "Shadowth117 CustomCharacterCreator_Shadowth117Fix 1.4.1"
+  ],
+  "anti_cheat": "no anti-cheat named in the public loader notes; runs can upload to leaderboards, so turn Upload score to Leaderboards off; this work does not patch Steam",
+  "status": "in-progress",
+  "agents": [
+   "Cursor (Grok 4.7)"
+  ],
+  "humans": [],
+  "date": "2026-11-08",
+  "links": [
+   "https://github.com/PeterMoras/MEGABONK_CustomCharacterLoader",
+   "https://github.com/Shadowth117/MEGABONK_CustomCharacterLoader",
+   "https://github.com/PeterMoras/MEGABONK_CustomCharacterMaker",
+   "https://thunderstore.io/c/megabonk/p/Shadowth117/CustomCharacterCreator_Shadowth117Fix/",
+   "https://aaronorelup.com/ledger/modding-megabonk/notes/",
+   "https://github.com/lukeod/megabonk_research"
+  ],
+  "tags": [
+   "characters",
+   "bepinex",
+   "il2cpp",
+   "assetbundle"
+  ]
+ },
+ {
   "path": "games/megabonk/custom-characters-and-weapons-with-bepinex-il2cpp-in-megabon.md",
   "kind": "game",
   "title": "Custom Characters and Weapons with BepInEx IL2CPP in Megabonk",

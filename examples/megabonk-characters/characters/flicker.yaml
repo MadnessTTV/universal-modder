@@ -1,0 +1,82 @@
+format: um-megabonk-character
+format_version: 1
+id: 1842201003
+author: local
+asset_bundle: flicker
+name: Flicker
+description: A fragile crit striker. Numbers are untested in Megabonk.
+collider:
+  height: 3.2
+  width: 0.55
+coolness: 8
+difficulty: 3
+appearance:
+  prefab: Assets/flicker/flicker.prefab
+  icon: icons/flicker-character.png
+  theme_song: ''
+  footsteps: []
+  clips:
+  - Idle
+  - Run
+  - Jump
+  - Fall
+  - Grind
+  animator_bools:
+  - grounded
+  - moving
+  - jumping
+  - grinding
+passive:
+  effect: CritHappens
+  name: Lucky Spark
+  description: Uses the game's CritHappens passive under this name. What it does was not re-measured here.
+  icon: icons/flicker-passive.png
+weapon:
+  name: Needle
+  description: A fast single hit with crit on the weapon itself. Numbers were not playtested.
+  icon: icons/flicker-weapon.png
+  attack_prefab: Assets/flicker/needle_attack.prefab
+  attack_speed: 0.4
+  damage: 9
+  knockback: 0.4
+  size: 0.7
+  bounces: 1
+  projectiles: 1
+  duration: 1
+  projectile_speed: 1.6
+  crit_chance: 0.2
+  crit_damage: 0.5
+  extra_stats:
+  - stat: Lifesteal
+    amount: 0.02
+  upgrades:
+  - stat: CritChance
+    modify: Addition
+    amount: 0.05
+  - stat: CritDamage
+    modify: Addition
+    amount: 0.25
+stats:
+- stat: CritChance
+  modify: Addition
+  amount: 0.15
+- stat: MaxHealth
+  modify: Addition
+  amount: -20
+- stat: Evasion
+  modify: Addition
+  amount: 0.06
+category_ratios:
+  Offensive: 0.0
+  Defensive: 0.2765
+  Movement: 0.3056
+  Utility: 1.0
+  Difficulty: 0.0
+  Coolness: 0.625
+  'Null': 1.0
+skins:
+- name: Spark
+  description: Flicker's default look. The material has to be built in Unity.
+  icon: icons/flicker-skin.png
+  materials:
+  - Assets/flicker/body.mat

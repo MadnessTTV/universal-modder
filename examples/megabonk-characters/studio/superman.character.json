@@ -1,0 +1,21 @@
+{
+  "id": 1842201004,
+  "name": "Superman",
+  "description": "Megachad body with one blue whole-body paint. Float is the existing hover effect, not flight. Aura is an existing weapon, not heat vision. No cape, emblem, or new mesh. The stat numbers were chosen as a strong sketch and were not measured in a run.",
+  "author": "local",
+  "appearance": "Megachad",
+  "tint": "#1A3FBF",
+  "paint": true,
+  "passive": "Float",
+  "weapon": "Aura",
+  "portrait": "",
+  "stats": [
+    {"stat": "MaxHealth", "modify": "Addition", "amount": 500},
+    {"stat": "Armor", "modify": "Addition", "amount": 40},
+    {"stat": "HealthRegen", "modify": "Addition", "amount": 5},
+    {"stat": "DamageMultiplier", "modify": "Addition", "amount": 3},
+    {"stat": "MoveSpeedMultiplier", "modify": "Addition", "amount": 0.75},
+    {"stat": "JumpHeight", "modify": "Addition", "amount": 2},
+    {"stat": "KnockbackMultiplier", "modify": "Addition", "amount": 1}
+  ]
+}

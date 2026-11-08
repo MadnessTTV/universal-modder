@@ -1,0 +1,90 @@
+{
+  "format": "um-megabonk-studio",
+  "format_version": 1,
+  "characters": [
+    {
+      "id": 1842201001,
+      "name": "Lumen",
+      "description": "Cloned from Fox. Extra modifiers were not playtested.",
+      "author": "local",
+      "appearance": "Fox",
+      "tint": "#FFD24A",
+      "passive": "Float",
+      "weapon": "FireStaff",
+      "portrait": "",
+      "stats": [
+        {
+          "stat": "PickupRange",
+          "modify": "Addition",
+          "amount": 6
+        },
+        {
+          "stat": "MoveSpeedMultiplier",
+          "modify": "Addition",
+          "amount": 0.04
+        },
+        {
+          "stat": "MaxHealth",
+          "modify": "Addition",
+          "amount": -10
+        }
+      ]
+    },
+    {
+      "id": 1842201002,
+      "name": "Bulwark",
+      "description": "Cloned from Megachad. Extra modifiers were not playtested.",
+      "author": "local",
+      "appearance": "Megachad",
+      "tint": "",
+      "passive": "Reinforced",
+      "weapon": "Axe",
+      "portrait": "",
+      "stats": [
+        {
+          "stat": "Armor",
+          "modify": "Addition",
+          "amount": 8
+        },
+        {
+          "stat": "MaxHealth",
+          "modify": "Addition",
+          "amount": 25
+        },
+        {
+          "stat": "MoveSpeedMultiplier",
+          "modify": "Addition",
+          "amount": -0.08
+        }
+      ]
+    },
+    {
+      "id": 1842201003,
+      "name": "Flicker",
+      "description": "Cloned from Ninja. Extra modifiers were not playtested.",
+      "author": "local",
+      "appearance": "Ninja",
+      "tint": "#E0C0FF",
+      "passive": "CritHappens",
+      "weapon": "Revolver",
+      "portrait": "",
+      "stats": [
+        {
+          "stat": "CritChance",
+          "modify": "Addition",
+          "amount": 0.15
+        },
+        {
+          "stat": "MaxHealth",
+          "modify": "Addition",
+          "amount": -20
+        },
+        {
+          "stat": "Evasion",
+          "modify": "Addition",
+          "amount": 0.06
+        }
+      ]
+    }
+  ]
+}

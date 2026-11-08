@@ -58,6 +58,7 @@ const GROUPS = [
   { name: "fastfile", blurb: "list and dump the rawfiles (GSC, CSC, menus) in Call of Duty 4 / World at War fastfiles (.ff)" },
   { name: "iwi", blurb: "convert and decode Call of Duty IWI v6 textures (png2iwi / iwi2png)" },
   { name: "weapon", blurb: "inspect, edit, clone, and diff Call of Duty weapon files" },
+  { name: "megabonk", blurb: "author Megabonk character packs for the custom-character loader (definitions, not an in-game test)" },
 ]
 
 const GROUP_NAMES = new Set(GROUPS.map((group) => group.name))
