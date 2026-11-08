@@ -427,12 +427,52 @@ def test_model_reply_rejects_unknown_fields_effects_and_ids():
         apply_model_draft(original, interpret_model_message(_draft_message())["character"], onto_id=999999)
 
 
+def test_synthetic_openai_chat_envelope_can_ask_draft_and_refine():
+    """The studio reads choices[0].message.content. This fixture never leaves the process."""
+    questions = json.dumps({
+        "type": "questions",
+        "questions": ["Which vanilla look should this clone use?", "Which of the 21 passives?"],
+    })
+    envelope = {
+        "id": "chatcmpl-synthetic",
+        "object": "chat.completion",
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": questions, "refusal": None},
+            "finish_reason": "stop",
+        }],
+    }
+    asked = interpret_model_message(envelope["choices"][0]["message"]["content"])
+    assert asked["ok"] is True and asked["kind"] == "questions"
+    first = interpret_model_message(_draft_message())
+    assert first["ok"] is True
+    created = apply_model_draft(starter_file(), first["character"])
+    new_id = created["characters"][-1]["id"]
+    refined = interpret_model_message(_draft_message(
+        name="Cinder II",
+        description="A brighter spark.",
+        stats=[{"stat": "Armor", "modify": "Addition", "amount": 2}],
+    ))
+    assert refined["ok"] is True
+    updated = apply_model_draft(created, refined["character"], onto_id=new_id)
+    assert updated["characters"][-1]["id"] == new_id
+    assert updated["characters"][-1]["name"] == "Cinder II"
+    assert updated["characters"][-1]["stats"] == [{"stat": "Armor", "modify": "Addition", "amount": 2}]
+    assert [row["id"] for row in updated["characters"][:3]] == [1842201001, 1842201002, 1842201003]
+    history = push_snapshot([], json.dumps(created))
+    restored, history = undo_snapshot(history)
+    assert json.loads(restored)["characters"][-1]["name"] == "Cinder"
+    assert history == []
+
+
 def test_model_client_has_no_default_endpoint_and_the_panel_stays_button_only():
     plugin = ROOT / "examples" / "megabonk-characters" / "plugin"
     client = (plugin / "AiClient.cs").read_text(encoding="utf-8")
     window = (plugin / "StudioWindow.cs").read_text(encoding="utf-8")
     assert "chat/completions" in client
     assert "MEGABONK_AI_KEY" in client
+    assert "Nothing was sent." in client
+    assert "ex.Message" not in client
     assert "127.0.0.1" not in client
     assert "api.openai.com" not in client
     assert "sk-" not in client

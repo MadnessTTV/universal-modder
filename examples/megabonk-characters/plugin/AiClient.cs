@@ -52,7 +52,7 @@ namespace UmMegabonkStudio
             }
             catch (Exception ex)
             {
-                error = "ai.json could not be read: " + ex.Message;
+                error = "ai.json could not be read (" + ex.GetType().Name + "). No request will be sent.";
                 return false;
             }
             if (baseUrl.Length == 0 || model.Length == 0)
@@ -95,30 +95,36 @@ namespace UmMegabonkStudio
             string failure = null;
             try
             {
-                var messages = new List<object>
-                {
-                    new { role = "system", content = AiProtocol.CatalogPrompt() },
-                };
-                foreach (var turn in prior)
-                    messages.Add(new { role = turn[0], content = turn[1] });
-                var content = userText ?? "";
-                if (!string.IsNullOrWhiteSpace(selectedJson))
-                    content += "\n\nCurrent character, for context only. Do not copy its id.\n" + selectedJson;
-                messages.Add(new { role = "user", content = content });
-                var payload = JsonSerializer.Serialize(new { model, messages });
-                using var client = new HttpClient();
-                client.Timeout = TimeSpan.FromSeconds(90);
-                var request = new HttpRequestMessage(HttpMethod.Post, baseUrl.TrimEnd('/') + "/chat/completions");
-                request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
                 var key = Environment.GetEnvironmentVariable(keyEnv);
-                if (!string.IsNullOrEmpty(key))
-                    request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + key);
-                var response = client.Send(request);
-                var text = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                if (!response.IsSuccessStatusCode)
-                    failure = "The model server returned " + (int)response.StatusCode + ".";
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    failure = keyEnv + " is not set in this game process. Nothing was sent.";
+                }
                 else
-                    body = ReadContent(text);
+                {
+                    var messages = new List<object>
+                    {
+                        new { role = "system", content = AiProtocol.CatalogPrompt() },
+                    };
+                    foreach (var turn in prior)
+                        messages.Add(new { role = turn[0], content = turn[1] });
+                    var content = userText ?? "";
+                    if (!string.IsNullOrWhiteSpace(selectedJson))
+                        content += "\n\nCurrent character, for context only. Do not copy its id.\n" + selectedJson;
+                    messages.Add(new { role = "user", content = content });
+                    var payload = JsonSerializer.Serialize(new { model, messages });
+                    using var client = new HttpClient();
+                    client.Timeout = TimeSpan.FromSeconds(90);
+                    var request = new HttpRequestMessage(HttpMethod.Post, baseUrl.TrimEnd('/') + "/chat/completions");
+                    request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+                    request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + key);
+                    var response = client.Send(request);
+                    var text = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                    if (!response.IsSuccessStatusCode)
+                        failure = "The model server returned " + (int)response.StatusCode + ".";
+                    else
+                        body = ReadContent(text);
+                }
             }
             catch (Exception ex)
             {

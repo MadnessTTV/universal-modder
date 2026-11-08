@@ -331,7 +331,7 @@ namespace UmMegabonkStudio
             GUILayout.Label(AiClient.Status, _label);
             if (!AiClient.TryConfig(out var baseUrl, out var model, out _, out _))
             {
-                GUILayout.Label("No model is connected. Nothing is sent. To connect one, create ai.json beside characters.json with base_url and model. A local OpenAI-compatible server uses its own address, for example http://127.0.0.1:11434/v1, and the model name it is already running, with no key. A hosted server uses its https address ending in /v1, and the key stays in the MEGABONK_AI_KEY environment variable. This build does not download a model, buy credits, or pick a provider.", _label);
+                GUILayout.Label("No model is connected. Nothing is sent. To connect one, create ai.json beside characters.json with base_url and model. OpenAI's chat completions address is https://api.openai.com/v1 and the model id goes in model. The key stays in the MEGABONK_AI_KEY environment variable of this game process. Quit Thunderstore Mod Manager and start it again from a session that already has that variable. A manager that is already open does not see a variable added later. The key is not written into ai.json.", _label);
             }
             else
             {

@@ -20,13 +20,25 @@ powershell -File examples\megabonk-characters\plugin\build.ps1 -Install
 
 That reads `%APPDATA%\Thunderstore Mod Manager\DataFolder\Megabonk\profiles\Default\BepInEx`, checks the interop DLLs, and builds `UmMegabonkStudio.dll`. `-Install` copies it to `BepInEx\plugins\UmMegabonkStudio\` and, only if you do not already have one, copies `studio/characters.json` (Lumen cloned from Fox, Bulwark from Megachad, Flicker from Ninja).
 
-Restart with the game already closed. In `BepInEx\LogOutput.log` look for `Megabonk Studio 0.2.0`, `Registered 'Lumen'`, `skinData contains`, and `prefab` not `NULL`. The editor stays closed until **F7**. The panel is an opaque dark rectangle with white labels and white buttons. Appearance, passive, and weapon open a full list (letter buttons filter it). Every supported stat is listed as unchanged or with its current modifier. **Close (F7)** hides it and clears keyboard focus. While it is closed the plugin does not draw. This 0.2.0 panel has not been watched in the game. The owner confirmed the previous installed build (commit `e865c46`) runs.
+Restart with the game already closed. In `BepInEx\LogOutput.log` look for `Megabonk Studio 0.2.1`, `Registered 'Lumen'`, `skinData contains`, and `prefab` not `NULL`. The editor stays closed until **F7**. The panel is an opaque dark rectangle with white labels and white buttons. Appearance, passive, and weapon open a full list (letter buttons filter it). Every supported stat is listed as unchanged or with its current modifier. **Close (F7)** hides it and clears keyboard focus. While it is closed the plugin does not draw. This 0.2.0 panel has not been watched in the game. The owner confirmed the previous installed build (commit `e865c46`) runs.
 
 The `2cdd99a` build did run. Its text boxes threw `Method unstripping failed` in `TextEditor.SaveBackup` and then spilled GUI clip errors. `PlayerRenderer.SetCharacter` threw `KeyNotFoundException` for character ids 1842201002 and 1842201003. Later source removed the text boxes, registers `skinData` plus the save's `characterSkins` index, and references `UnityEngine.AudioModule`. Do not put a text box back.
 
 A tint button stores `#RRGGBB`. The visible mesh keeps the cloned character's materials. A new 3D model and a new ability effect are not available. A passive is one of the existing 21. A weapon is one of the existing weapons.
 
-The model section does not send a prompt until `ai.json` sits beside `characters.json` and both `base_url` and `model` are set. There is no default address and no built-in key. A local OpenAI-compatible server (Ollama, LM Studio, or llama.cpp) is `base_url` like `http://127.0.0.1:11434/v1` plus the model name that server already has, and no key. A hosted server is its `https://.../v1` address, with the key only in the `MEGABONK_AI_KEY` environment variable. Neither was verified on the game PC. This session did not download a model, buy credits, or call a server. `um megabonk studio review-model reply.txt` checks a saved reply offline. Apply is a separate button. Undo restores the previous character list. The model cannot choose an id.
+The model section does not send a prompt until `ai.json` sits beside `characters.json` and both `base_url` and `model` are set. There is no default address and no built-in key. For the hosted OpenAI API the file is:
+
+```json
+{
+  "base_url": "https://api.openai.com/v1",
+  "model": "gpt-5.4-mini",
+  "api_key_env": "MEGABONK_AI_KEY"
+}
+```
+
+`api_key_env` may be omitted; it defaults to `MEGABONK_AI_KEY`. The key itself does not go in this file. Official model pages list `gpt-5.4` and `gpt-5.4-mini` as supporting `v1/chat/completions`. `gpt-5.4-mini` is the smaller of those two. Each Send is a billed call on the account that owns the key. This session did not create a key, call the API, or spend anything. The installed `0.2.0` build still posts when the variable is empty. `0.2.1` refuses that post. `um megabonk studio review-model reply.txt` checks a saved reply offline. Apply is a separate button. Undo restores the previous character list. The model cannot choose an id.
+
+The game reads `MEGABONK_AI_KEY` from its own process environment. Thunderstore Mod Manager keeps the environment it had when it started, and the game inherits that copy. Quit the manager, then start it from a session that already has the variable. Do not use `setx` or System Properties for the key: those write it in plaintext under the user environment registry and still do not update a manager that is already running. Do not put the key on a command line.
 
 If OnGUI never logs, edit the json and restart:
 
