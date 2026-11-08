@@ -1,5 +1,30 @@
 # Megabonk character packs
 
+## Runtime studio (no Unity 2023 editor)
+
+The installed editor is Unity 6000.6.8f1. AssetBundles for this game have to be built with 2023.2.22f1, which is not installed. The studio does not build a bundle. It clones a vanilla character at runtime, which is how a current Megabonk character mod adds someone selectable, and then changes the name, an existing passive, an existing weapon, extra stats, and a tint.
+
+The plugin source is `plugin/`. It was not compiled here: this environment has no .NET SDK and no game DLLs, and those DLLs stay on your PC. On the Galaxy Book:
+
+```powershell
+powershell -File examples\megabonk-characters\plugin\build.ps1 -Install
+```
+
+That reads `%APPDATA%\Thunderstore Mod Manager\DataFolder\Megabonk\profiles\Default\BepInEx`, checks the interop DLLs, and builds `UmMegabonkStudio.dll`. `-Install` copies it to `BepInEx\plugins\UmMegabonkStudio\` and, only if you do not already have one, copies `studio/characters.json` (Lumen cloned from Fox, Bulwark from Megachad, Flicker from Ninja).
+
+Restart the game. In `BepInEx\LogOutput.log` look for `Registered 'Lumen'` and `Studio UI OnGUI ran`. Press **F7** for the editor. That window has not been seen in the game yet. If OnGUI never logs, edit the json and restart:
+
+```bash
+um megabonk studio validate studio/characters.json
+um megabonk studio set studio/characters.json --id 1842201001 --tint #FFD24A --stat Armor:Addition:3
+```
+
+A different appearance applies on the next launch. Passive, weapon, tint and extra stats are written onto the live clone for the next run. The passive is one of the game's 21 effects. This does not invent a new one. Leaderboard uploads stay Off; the plugin does not touch that switch or the save folder.
+
+If the build fails, paste the first compiler error (the missing type or method). Do not send any file from `interop\` or `core\`.
+
+## Loader packs (need Unity 2023.2.22f1)
+
 Three distinct character definitions — **Lumen**, **Bulwark** and **Flicker** — plus `um megabonk`, which checks them and writes the `.custom.json` the community Custom Character Loader reads.
 
 This folder does not contain a character the game can spawn. Megabonk is Unity 2023.2 IL2CPP. Characters are ScriptableObjects filled from an AssetBundle. The json names the prefab, icons, materials and weapon attack inside that bundle. Without the bundle, the loader opens a missing file during `DataManager.Load`. `um megabonk install` refuses to copy a json into the game unless a sibling file with a UnityFS header is present, and a header check is not a load test.

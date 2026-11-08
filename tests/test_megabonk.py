@@ -7,10 +7,12 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from um.megabonk_studio import add_character, load_studio, save_studio, set_character, starter_file, validate_studio
 from um.megabonk import (
     CATEGORIES,
     CHARACTERS,
     MIN_BUNDLE_BYTES,
+    MODIFY,
     PASSIVES,
     REQUIRED_WEAPON_STATS,
     STATS,
@@ -273,6 +275,61 @@ def test_doctor_on_the_prepared_install_has_no_play_blockers_other_than_honesty(
     assert report["characters"][0]["unityfs"] is True
     assert report["characters"][0]["id"] == 1842201002
     assert any("not run" in note.lower() or "In-game" in note for note in report["notes"])
+
+
+def test_studio_starter_clones_are_distinct_and_round_trip(tmp_path):
+    data = starter_file()
+    errors, warnings = validate_studio(data)
+    assert errors == [] and warnings == []
+    looks, passives, weapons = set(), set(), set()
+    for row in data["characters"]:
+        looks.add(row["appearance"])
+        passives.add(row["passive"])
+        weapons.add(row["weapon"])
+        assert row["id"] >= 1000
+        assert row["stats"]
+    assert len(looks) == len(passives) == len(weapons) == 3
+    path = tmp_path / "characters.json"
+    save_studio(path, data)
+    loaded = load_studio(path)
+    assert [row["name"] for row in loaded["characters"]] == ["Lumen", "Bulwark", "Flicker"]
+    with pytest.raises(MegabonkError, match="Amog"):
+        add_character(loaded, "Spare", "Amog", ident=14)
+    assert len(loaded["characters"]) == 3
+    add_character(loaded, "Spare", "Amog")
+    assert loaded["characters"][-1]["appearance"] == "Amog"
+    assert loaded["characters"][-1]["id"] >= 1000
+
+
+def test_studio_set_rejects_a_bad_tint_without_losing_the_draft(tmp_path):
+    path = tmp_path / "characters.json"
+    save_studio(path, starter_file())
+    data = load_studio(path)
+    with pytest.raises(MegabonkError, match="tint"):
+        set_character(data, 1842201001, tint="gold")
+    assert data["characters"][0]["tint"] == "#FFD24A"
+    set_character(data, 1842201001, stats=["Armor:Addition:3"], appearance="Calcium")
+    assert data["characters"][0]["appearance"] == "Calcium"
+    assert data["characters"][0]["stats"][-1] == {"stat": "Armor", "modify": "Addition", "amount": 3}
+
+
+def test_plugin_catalog_matches_the_python_enums():
+    text = (ROOT / "examples" / "megabonk-characters" / "plugin" / "Catalog.cs").read_text(encoding="utf-8")
+
+    def grab(array):
+        start = text.index(f"string[] {array}")
+        body = text[start:text.index("};", start)]
+        return re.findall(r'"([A-Za-z0-9]+)"', body)
+
+    import re
+    assert grab("Stats") == list(STATS)
+    assert grab("Passives") == list(PASSIVES)
+    assert grab("Characters") == [CHARACTERS[i] for i in range(len(CHARACTERS))]
+    assert grab("Weapons") == [WEAPONS[i] for i in range(len(WEAPONS))]
+    assert grab("ModifyTypes") == list(MODIFY)
+    plugin = "\n".join(p.read_text(encoding="utf-8") for p in (ROOT / "examples" / "megabonk-characters" / "plugin").glob("*.cs"))
+    for member in ("characterData", "unsortedCharacterData", "skinData", "statModifiers", "eCharacter", "Instantiate"):
+        assert member in plugin
 
 
 def test_doctor_on_an_empty_folder_lists_the_missing_files(tmp_path):

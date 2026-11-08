@@ -8,6 +8,8 @@
     um megabonk pack characters/lumen.yaml -o packs/lumen
     um megabonk doctor "C:/Program Files (x86)/Steam/steamapps/common/Megabonk"
     um megabonk install packs/lumen --game "C:/Program Files (x86)/Steam/steamapps/common/Megabonk"
+    um megabonk studio init studio/characters.json
+    um megabonk studio validate studio/characters.json
     um megabonk uninstall --game "C:/Program Files (x86)/Steam/steamapps/common/Megabonk"
 
 Authors distinct character definitions (appearance paths, a renamed existing passive, stat
@@ -149,6 +151,18 @@ Loader, installed by you into a copy of the game
     The original MegabonkModders CustomCharacterCreator 1.4.0 is the loader that public reports
     say broke in the December 2025 game update. Do not install that build for a current game.
   This command does not download or install either package.
+
+Runtime clones (no Unity editor)
+  Unity 6000.x cannot build a bundle for this game. The Studio plugin clones a vanilla
+  CharacterData at runtime (the same Instantiate path a current character mod uses), then
+  sets the name, an existing passive, an existing weapon, extra stat modifiers, and an
+  optional #RRGGBB tint on _Color and _AlbedoColor when those properties exist.
+  Compile it on the PC that has the interop DLLs:
+    powershell -File examples/megabonk-characters/plugin/build.ps1 -Install
+  Drafts live in BepInEx/plugins/UmMegabonkStudio/characters.json
+  (`um megabonk studio`). F7 is the in-game editor. That window has not been seen in the
+  game yet. The log line "Studio UI OnGUI ran" is the check. Until it appears, edit the
+  json and restart.
 
 Appearance
   The loader opens the file next to NAME.custom.json (the same path with .custom.json removed)
@@ -1194,6 +1208,42 @@ def uninstall(game: Path, ident: int | None = None, force: bool = False) -> list
     return removed
 
 
+def _studio(a):
+    from um.megabonk_studio import add_character, format_studio, load_studio, save_studio, set_character, starter_file, validate_studio
+    if not getattr(a, "studio_cmd", None):
+        die("usage: um megabonk studio init|validate|add|set ...")
+    path = Path(a.path)
+    if a.studio_cmd == "init":
+        if path.exists() and not a.force:
+            die(f"refusing to overwrite {path} (pass --force)")
+        data = starter_file()
+        save_studio(path, data)
+        print(f"wrote {path}")
+        print(format_studio(data))
+        print("Copy this file next to UmMegabonkStudio.dll after that plugin is compiled.")
+        print("It is read at the next game launch. This command does not start the game.")
+        return
+    if a.studio_cmd == "validate":
+        data = json.loads(path.read_text(encoding="utf-8"))
+        errors, warnings = validate_studio(data)
+        raise SystemExit(_print_validation(errors, warnings))
+    data = load_studio(path)
+    if a.studio_cmd == "add":
+        row = add_character(data, a.name, a.appearance, a.author, a.id, a.passive or "", a.weapon or "", a.description or "")
+        save_studio(path, data)
+        print(f"added {row['name']} id={row['id']}")
+    elif a.studio_cmd == "set":
+        set_character(
+            data, a.id, name=a.name, description=a.description, author=a.author,
+            appearance=a.appearance, passive=a.passive, weapon=a.weapon, tint=a.tint,
+            clear_stats=a.clear_stats, stats=a.stat,
+        )
+        save_studio(path, data)
+        print(format_studio(data))
+    else:
+        die("unknown studio command")
+
+
 def _print_validation(errors: list[str], warnings: list[str]) -> int:
     for w in warnings:
         print(f"warning: {w}")
@@ -1255,6 +1305,8 @@ def main(a):
             for line in removed:
                 print(line)
             print("BepInEx was left in place. Saves were not read or written.")
+        elif a.cmd == "studio":
+            _studio(a)
         else:
             die("unknown megabonk command")
     except MegabonkError as e:
@@ -1314,3 +1366,36 @@ def register(sub):
     q.add_argument("--id", type=int)
     q.add_argument("--force", action="store_true")
     q.set_defaults(func=main)
+
+    q = cs.add_parser("studio", help="edit runtime clone drafts (no AssetBundle)")
+    ss = q.add_subparsers(dest="studio_cmd", metavar="<cmd>")
+    s = ss.add_parser("init", help="write the three starter clones")
+    s.add_argument("path")
+    s.add_argument("--force", action="store_true")
+    s.set_defaults(func=main)
+    s = ss.add_parser("validate", help="check a studio characters.json")
+    s.add_argument("path")
+    s.set_defaults(func=main)
+    s = ss.add_parser("add", help="append a clone draft")
+    s.add_argument("path")
+    s.add_argument("--name", required=True)
+    s.add_argument("--appearance", required=True, help="vanilla character to clone, e.g. Fox")
+    s.add_argument("--author", default="local")
+    s.add_argument("--id", type=int)
+    s.add_argument("--passive", default="", help="existing EPassive name, or empty to keep the clone's")
+    s.add_argument("--weapon", default="", help="existing EWeapon name, or empty to keep the clone's")
+    s.add_argument("--description", default="")
+    s.set_defaults(func=main)
+    s = ss.add_parser("set", help="change one draft")
+    s.add_argument("path")
+    s.add_argument("--id", type=int, required=True)
+    s.add_argument("--name")
+    s.add_argument("--description")
+    s.add_argument("--author")
+    s.add_argument("--appearance")
+    s.add_argument("--passive")
+    s.add_argument("--weapon")
+    s.add_argument("--tint", help="#RRGGBB or empty")
+    s.add_argument("--clear-stats", action="store_true")
+    s.add_argument("--stat", action="append", default=[], help="Stat:Modify:amount, repeatable")
+    s.set_defaults(func=main)

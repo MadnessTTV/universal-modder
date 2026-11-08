@@ -6,19 +6,19 @@ game_version: "not launched here; public notes say Steam app 3405340, build 2175
 platform: windows
 engine: unity-il2cpp
 route: loader-api
-tools: ["um megabonk", "BepInExPack_IL2CPP 6.0.738 (pinned by the loader, not installed here)", "Shadowth117 CustomCharacterCreator_Shadowth117Fix 1.4.1 (not installed here)"]
+tools: ["um megabonk", "UmMegabonkStudio (source, not compiled here)", "BepInEx 6.0.0-be.788 on the owner's PC", "Shadowth117 CustomCharacterCreator_Shadowth117Fix 1.4.1"]
 anti_cheat: "no anti-cheat named in the public loader notes; runs can upload to leaderboards, so turn Upload score to Leaderboards off; this work does not patch Steam"
 status: in-progress
 agents: ["Cursor (Grok 4.7)"]
 humans: []
-date: 2026-11-07
+date: 2026-11-08
 links: ["https://github.com/PeterMoras/MEGABONK_CustomCharacterLoader", "https://github.com/Shadowth117/MEGABONK_CustomCharacterLoader", "https://github.com/PeterMoras/MEGABONK_CustomCharacterMaker", "https://thunderstore.io/c/megabonk/p/Shadowth117/CustomCharacterCreator_Shadowth117Fix/", "https://aaronorelup.com/ledger/modding-megabonk/notes/", "https://github.com/lukeod/megabonk_research"]
 tags: ["characters", "bepinex", "il2cpp", "assetbundle"]
 ---
 
 # Character definitions for Megabonk's custom-character loader
 
-> `um megabonk` writes distinct character definitions and the `.custom.json` the public Custom Character Loader reads, and it can copy a json plus a UnityFS bundle into `BepInEx/plugins/CustomCharacters` with a reversible manifest. The game was not installed in this session, so no character was shown in a menu or a run. The example packs are Lumen, Bulwark and Flicker under `examples/megabonk-characters/`.
+> `um megabonk` writes loader packs and, as of 2026-11-08, runtime clone drafts. The owner's PC ran Megabonk 1.0.69 with BepInEx 6.0.0-be.788 and CustomCharacterLoader 1.4.1 (`Loading Custom Creations`, no Error lines) and has no custom json installed. Unity 6000.6.8f1 is the only editor there, so a 2023.2 bundle cannot be built. The studio plugin clones a vanilla character instead. That plugin was not compiled or launched in this session.
 
 ## Setup
 - Toolkit only. No Megabonk folder, no `GameAssembly.dll`, no `BepInEx/interop`, no Unity editor on the machine that produced this note.
@@ -67,9 +67,18 @@ Example definitions: `examples/megabonk-characters/characters/`.
 5. **The maker's sample pickup range.** **Cause:** `CustomCharacterSO` ships a PickupRange modifier of 45. **Fix:** new definitions start with an empty `stats` list, and validate warns at 45 or above.
 6. **`*.json` directly inside `CustomCharacters` is loaded**, including a manifest you might be tempted to store there. **Cause:** the search is `*.json` in that folder, not only `*.custom.json`. **Fix:** the install manifest lives at `BepInEx/um-megabonk/install.json`, outside `plugins`.
 7. **A copied game folder still shares the real save and the leaderboard switch.** **Cause:** both use `%USERPROFILE%\AppData\LocalLow\Ved\Megabonk`. **Fix:** `um backup` that folder first, and turn leaderboard uploads off in the game. This tool does not flip that switch for you.
+8. **Unity 6000 is installed and the bundle build still cannot be done.** **Cause:** Megabonk's player is 2023.2.22f1. An AssetBundle from another editor version does not load, and 2023.2.22f1 is not installed. **Fix:** use the runtime clone plugin. It does not need the editor.
+9. **F7 does nothing and the log never says `Studio UI OnGUI ran`.** **Cause:** the IMGUI behaviour was not executed in this session, so a missing message means Unity is not calling OnGUI on it. **Fix:** edit `characters.json` with `um megabonk studio` and restart. Paste the first `dotnet build` error if the DLL was not produced. Do not send interop DLLs.
 
 ## Assets
 Example icons are 128×128 PNGs drawn by `examples/megabonk-characters/tools/make_icons.py`. No game textures.
+
+## Runtime clone (2026-11-08)
+The owner's log confirmed the loader starts on build 21750826 / Unity 2023.2.22f1 / BepInEx 6.0.0-be.788 / .NET 6.0.7. `Loading [CustomCharacterLoader 1.4.0]` is the assembly version inside the 1.4.1 package. Chainloader startup completed, then `Loading Custom Creations`. One Il2CppInterop `Class::Init` fallback warning, no Error entries. Leaderboard uploads were Off. The loader wrote skin-preference data into the save; the backed-up originals were kept.
+
+A shipped character mod clones `CharacterData` with `Instantiate`, stores it at a free `eCharacter`, copies one `SkinData`, and assigns an existing weapon from `DataManager.weapons`. Tint copies the material and multiplies `_Color`. The older field note names `_AlbedoColor` for the toon shader, so the studio sets whichever of those two properties `HasProperty` reports. Hats are copied from `HatData.orientations` for the source character. None of that was executed here.
+
+`examples/megabonk-characters/plugin/build.ps1` compiles `UmMegabonkStudio.dll` against the profile's `BepInEx\core` and `BepInEx\interop` (Assembly-CSharp, UnityEngine.CoreModule, IMGUIModule, InputLegacyModule, BepInEx.Core, BepInEx.Unity.IL2CPP, 0Harmony, Il2CppInterop.Runtime). The references stay on that PC. F7 opens an IMGUI editor over `characters.json`. The oracle that OnGUI actually runs is the log line `Studio UI OnGUI ran`. Until that line exists, the editor is source only. `um megabonk studio` edits the same file and is covered by `tests/test_megabonk.py`.
 
 ## Open questions
 - Whether Flat modifiers set a stat or add to it, on the current build.

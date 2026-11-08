@@ -10,3 +10,11 @@
 - YAML 1.1 reads bare `None` and `Null` as null. The dumper quotes those names. The empty passive is `EPassive.None` (9). The category is `EStatCategory.Null` (6).
 - Route: loader-api, authoring side only. A new passive effect or a new projectile class needs a Harmony plugin against `BepInEx/interop`, which is not in this environment, so it was not written.
 - Tests: `uv run --with pytest pytest -q tests/test_megabonk.py`. Install/uninstall covered on a fake game tree. UnityFS header checked. No bundle was loaded by Unity or by Megabonk.
+
+## 2026-11-08
+
+- The user's PC confirmed 1.0.69, Unity 2023.2.22f1, BepInEx 6.0.0-be.788, .NET 6.0.7. CustomCharacterLoader 1.4.1 logs `Loading Custom Creations` with no Error lines. No custom json or bundle is installed. Leaderboard uploads are Off. The loader itself wrote skin data into the save; the backup was kept.
+- Unity Hub's editor is 6000.6.8f1. That cannot build a 2023.2.22f1 AssetBundle.
+- A current character mod (Guz) clones `CharacterData` with `Object.Instantiate`, assigns a free `eCharacter`, copies one skin, and points the weapon at an existing `DataManager.weapons` entry. Tint multiplies `_Color` on a copied material. The field note also names `_AlbedoColor` for the toon shader. The studio plugin does both properties when `HasProperty` is true.
+- Plugin source is `plugin/`. It is not compiled in this environment. `build.ps1` compiles it against the profile's interop and does not upload those DLLs. F7 IMGUI is in the source. It is unverified until `Studio UI OnGUI ran` shows up in `LogOutput.log`.
+- `um megabonk studio` edits the same `characters.json`. That path is tested here.

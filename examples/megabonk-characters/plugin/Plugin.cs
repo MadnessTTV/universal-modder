@@ -1,0 +1,111 @@
+using System;
+using System.IO;
+using BepInEx;
+using BepInEx.Logging;
+using BepInEx.Unity.IL2CPP;
+using HarmonyLib;
+
+namespace UmMegabonkStudio
+{
+    [BepInPlugin(Plugin.Guid, "Megabonk Studio", "0.1.0")]
+    public class Plugin : BasePlugin
+    {
+        public const string Guid = "um.megabonk.studio";
+        internal static ManualLogSource LogSource;
+        internal static string JsonPath;
+        static bool _uiDead;
+
+        public override void Load()
+        {
+            LogSource = Log;
+            var dir = Path.Combine(Paths.PluginPath, "UmMegabonkStudio");
+            Directory.CreateDirectory(dir);
+            JsonPath = Path.Combine(dir, "characters.json");
+            Info("Megabonk Studio 0.1.0. Drafts: " + JsonPath);
+            Info("F7 is the in-game editor key. OnGUI has not run yet. Leaderboard uploads should stay Off. This plugin does not change that switch and does not write the save folder.");
+            var harmony = new Harmony(Guid);
+            var load = AccessTools.Method(typeof(DataManager), nameof(DataManager.Load));
+            if (load == null)
+            {
+                Log.LogError("DISABLED: DataManager.Load was not found. No characters will be added.");
+            }
+            else
+            {
+                harmony.Patch(load, postfix: new HarmonyMethod(typeof(Hooks), nameof(Hooks.AfterLoad)));
+            }
+            PatchText(harmony, nameof(UnlockableBase.GetName), nameof(Hooks.NamePrefix));
+            PatchText(harmony, nameof(UnlockableBase.GetDescription), nameof(Hooks.DescriptionPrefix));
+            var tryInit = AccessTools.Method(typeof(CharacterMenu), "TryInit");
+            if (tryInit != null)
+                harmony.Patch(tryInit, postfix: new HarmonyMethod(typeof(Hooks), nameof(Hooks.AfterMenuInit)));
+            else
+                Warn("CharacterMenu.TryInit was not found. The grid still reads characterData if the game builds it from there.");
+            try
+            {
+                StudioWindow.Install();
+                Info("Studio UI behaviour created. Waiting for OnGUI.");
+            }
+            catch (Exception ex)
+            {
+                FailUi("Install", ex);
+            }
+        }
+
+        static void PatchText(Harmony harmony, string method, string prefix)
+        {
+            var found = AccessTools.Method(typeof(UnlockableBase), method);
+            if (found == null)
+            {
+                Warn("UnlockableBase." + method + " was not found. Custom names may throw when the menu opens.");
+                return;
+            }
+            harmony.Patch(found, prefix: new HarmonyMethod(typeof(Hooks), prefix));
+        }
+
+        internal static void Info(string message) { LogSource.LogInfo(message); }
+        internal static void Warn(string message) { LogSource.LogWarning(message); }
+
+        internal static void FailUi(string where, Exception ex)
+        {
+            if (_uiDead) return;
+            _uiDead = true;
+            LogSource.LogError("Studio UI stopped during " + where + ": " + ex);
+            LogSource.LogError("The clone registration is separate. Edit characters.json with `um megabonk studio` and restart.");
+        }
+    }
+
+    static class Hooks
+    {
+        public static void AfterLoad(DataManager __instance)
+        {
+            try
+            {
+                int n = Registrar.RegisterAll(__instance, Plugin.JsonPath);
+                Plugin.Info("Studio registered " + n + " character(s).");
+            }
+            catch (Exception ex)
+            {
+                Plugin.Warn("Studio registration failed: " + ex);
+            }
+        }
+
+        public static void AfterMenuInit()
+        {
+            Plugin.Info("CharacterMenu.TryInit finished. Studio characters are in characterData if registration already ran.");
+        }
+
+        public static bool NamePrefix(UnlockableBase __instance, ref string __result)
+        {
+            if (!Registrar.TryText(__instance, false, out var text)) return true;
+            __result = text;
+            return false;
+        }
+
+        public static bool DescriptionPrefix(UnlockableBase __instance, ref string __result)
+        {
+            if (!Registrar.TryText(__instance, true, out var text)) return true;
+            __result = text;
+            return false;
+        }
+    }
+}

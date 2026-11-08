@@ -5195,8 +5195,9 @@
   "route": "loader-api",
   "tools": [
    "um megabonk",
-   "BepInExPack_IL2CPP 6.0.738 (pinned by the loader, not installed here)",
-   "Shadowth117 CustomCharacterCreator_Shadowth117Fix 1.4.1 (not installed here)"
+   "UmMegabonkStudio (source, not compiled here)",
+   "BepInEx 6.0.0-be.788 on the owner's PC",
+   "Shadowth117 CustomCharacterCreator_Shadowth117Fix 1.4.1"
   ],
   "anti_cheat": "no anti-cheat named in the public loader notes; runs can upload to leaderboards, so turn Upload score to Leaderboards off; this work does not patch Steam",
   "status": "in-progress",
@@ -5204,7 +5205,7 @@
    "Cursor (Grok 4.7)"
   ],
   "humans": [],
-  "date": "2026-11-07",
+  "date": "2026-11-08",
   "links": [
    "https://github.com/PeterMoras/MEGABONK_CustomCharacterLoader",
    "https://github.com/Shadowth117/MEGABONK_CustomCharacterLoader",
