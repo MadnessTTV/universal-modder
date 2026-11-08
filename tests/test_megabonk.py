@@ -618,6 +618,37 @@ def test_superman_append_paints_only_the_new_id():
     assert "Shared materials were not changed" in registrar
 
 
+def test_appearance_edit_keeps_combat_fields_and_presets_reject_junk():
+    from um.megabonk_appearance import apply_as_new, apply_look, normalize_hex, snapshot, validate_preset
+
+    row = starter_file()["characters"][0]
+    original = snapshot(row)
+    draft = {"appearance": "Megachad", "tint": "#1A3FBF", "paint": True}
+    changed = apply_look(row, draft)
+    assert changed["id"] == row["id"]
+    assert changed["passive"] == row["passive"] and changed["weapon"] == row["weapon"]
+    assert changed["stats"] == row["stats"]
+    assert snapshot(changed) == draft
+    assert snapshot(apply_look(changed, original)) == original
+    studio = starter_file()
+    made = apply_as_new(studio, 1842201001, draft)
+    assert [item["id"] for item in studio["characters"]] == [1842201001, 1842201002, 1842201003]
+    assert made["characters"][-1]["id"] == 1842201004
+    assert made["characters"][-1]["appearance"] == "Megachad"
+    assert made["characters"][0]["appearance"] == "Fox"
+    assert made["characters"][-1]["stats"] == studio["characters"][0]["stats"]
+    assert normalize_hex("1a3fbf") == "#1A3FBF"
+    assert normalize_hex("nope") is None
+    assert validate_preset({"name": "Classic blue", "appearance": "Megachad", "tint": "#1A3FBF", "paint": True}) is None
+    assert validate_preset({"name": "Classic blue", "appearance": "Megachad", "tint": "#1A3FBF", "paint": True}, ["Classic blue"])
+    assert validate_preset({"name": "x", "appearance": "NotABody", "tint": "#1A3FBF", "paint": True})
+    assert validate_preset({"name": "x", "appearance": "Megachad", "tint": "", "paint": True})
+    window = (ROOT / "examples" / "megabonk-characters" / "plugin" / "StudioWindow.cs").read_text(encoding="utf-8")
+    assert "Appearance" in window and "Not a 3D model" in window
+    assert "GUILayoutUtility" not in window and "backgroundColor" not in window
+    assert "TextField" not in window and "TextArea" not in window
+
+
 def test_model_client_has_no_default_endpoint_and_the_panel_stays_button_only():
     plugin = ROOT / "examples" / "megabonk-characters" / "plugin"
     client = (plugin / "AiClient.cs").read_text(encoding="utf-8")

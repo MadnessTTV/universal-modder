@@ -68,6 +68,16 @@ namespace UmMegabonkStudio
         static readonly StudioSession _session = new StudioSession();
         static readonly Dictionary<string, PromptBuffer> _buffers = new Dictionary<string, PromptBuffer>();
         static readonly List<string> _history = new List<string>();
+        static string _lookBody = "";
+        static string _lookTint = "";
+        static bool _lookPaint;
+        static string _savedBody = "";
+        static string _savedTint = "";
+        static bool _savedPaint;
+        static AppearanceFile _presets = new AppearanceFile();
+        static readonly string[] _swatches = {
+            "#1A3FBF", "#C62828", "#F5C518", "#FFD24A", "#FFFFFF", "#1A1A1A", "#2E7D32", "#6A1B9A",
+        };
 
         public static string Phase = "idle";
         static bool _drawFinished;
@@ -335,6 +345,8 @@ namespace UmMegabonkStudio
             else if (screen == "edit_questions") DrawQuestions();
             else if (screen == "edit_preview") DrawEditPreview();
             else if (screen == "manual") DrawManual();
+            else if (screen == "look_pick") DrawLookPick();
+            else if (screen == "look") DrawLook();
             else DrawHome();
         }
 
@@ -356,6 +368,8 @@ namespace UmMegabonkStudio
             GUILayout.Label("Create a character from a description you type. That adds someone new. It does not change the people already in the list.", _label);
             if (Wide("Create a character", new Color(0.55f, 0.86f, 0.70f, 1f)))
                 BeginCreate();
+            if (Wide("Appearance", new Color(0.98f, 0.62f, 0.18f, 1f)))
+                OpenLookPick();
             if (AiClient.Pending != null && _replyIntent == "create" && Wide("Review the new-character draft", new Color(0.55f, 0.86f, 0.70f, 1f)))
             {
                 _session.Intent = "create";
@@ -377,6 +391,8 @@ namespace UmMegabonkStudio
             {
                 var row = rows[i];
                 GUILayout.Label(row.Name + "   look " + row.Appearance + "   id " + row.Id, _label);
+                if (GUILayout.Button("Look " + row.Name, _button))
+                    OpenLook(row.Id);
                 if (GUILayout.Button("Edit " + row.Name, _button))
                     BeginEdit(row.Id);
             }
@@ -627,6 +643,271 @@ namespace UmMegabonkStudio
             }
             GUI.color = previous;
             _well.fixedHeight = 0f;
+        }
+
+        static void OpenLookPick()
+        {
+            _session.Screen = "look_pick";
+            _session.Intent = "look";
+            _focus = null;
+            _status = "Pick whose look to change. Stats, passive, and weapon stay with that character.";
+        }
+
+        static void OpenLook(int id)
+        {
+            var row = Find(id);
+            if (row == null) return;
+            _session.BeginEdit(id);
+            _session.Screen = "look";
+            _session.Intent = "look";
+            _lookBody = row.Appearance ?? "";
+            _lookTint = row.Tint ?? "";
+            _lookPaint = row.Paint;
+            _savedBody = _lookBody;
+            _savedTint = _lookTint;
+            _savedPaint = _lookPaint;
+            var hex = Buf("hex");
+            hex.Text = _lookTint;
+            hex.Caret = hex.Text.Length;
+            hex.Mark = hex.Caret;
+            _focus = null;
+            try { _presets = AppearanceBook.Load(AppearanceBook.PathFor(Plugin.JsonPath)); }
+            catch (Exception)
+            {
+                _presets = new AppearanceFile();
+                _status = "Saved looks could not be read. The character list was not changed.";
+                return;
+            }
+            _status = "Appearance of " + row.Name + " id " + row.Id + ". Nothing is saved until you apply it.";
+        }
+
+        static void DrawLookPick()
+        {
+            Banner("Appearance. Chunkier controls, one body, one color.", new Color(0.98f, 0.62f, 0.18f, 1f));
+            GUILayout.Label("Choose a character. This does not create a cape, emblem, or separate clothing colors.", _label);
+            if (_file.Characters.Count == 0)
+                GUILayout.Label("Create a character first. There is nobody to restyle.", _label);
+            for (int i = 0; i < _file.Characters.Count; i++)
+            {
+                var row = _file.Characters[i];
+                if (GUILayout.Button("Look " + row.Name + "   " + row.Appearance, _primary))
+                    OpenLook(row.Id);
+            }
+        }
+
+        static void DrawLook()
+        {
+            var row = Find(_session.EditId);
+            if (row == null)
+            {
+                GUILayout.Label("That character is no longer in the list.", _label);
+                return;
+            }
+            Banner(row.Name + " id " + row.Id + ". Stats, passive, and weapon stay.", new Color(0.98f, 0.62f, 0.18f, 1f));
+            DrawSwatch();
+            GUILayout.Label(_lookPaint
+                ? "Body " + _lookBody + ". Paint on. One color for the whole body, including skin."
+                : "Body " + _lookBody + ". Paint off. The shared materials stay as they are.", _label);
+            Section("Body");
+            for (int i = 0; i < Catalog.Characters.Length; i++)
+            {
+                var body = Catalog.Characters[i];
+                var mark = body == _lookBody ? "Selected body: " : "Body: ";
+                if (GUILayout.Button(mark + body, body == _lookBody ? _primary : _button))
+                    _lookBody = body;
+            }
+            Section("Color");
+            for (int i = 0; i < _swatches.Length; i++)
+            {
+                if (SwatchButton(_swatches[i]))
+                {
+                    _lookTint = _swatches[i];
+                    _lookPaint = true;
+                    Buf("hex").Text = _lookTint;
+                    Buf("hex").Caret = _lookTint.Length;
+                    Buf("hex").Mark = _lookTint.Length;
+                }
+            }
+            GUILayout.Label("Type a hex color. Six digits, with or without #.", _label);
+            DrawBuffer("hex", 64f);
+            if (GUILayout.Button("Use typed color", _button))
+            {
+                var hex = AppearanceBook.NormalizeHex(Buf("hex").Text);
+                if (hex == null) _status = "That is not a hex color. The look was not changed.";
+                else
+                {
+                    _lookTint = hex;
+                    _lookPaint = true;
+                    _status = "Typed color " + hex + " is in the preview. Apply to keep it.";
+                }
+            }
+            if (GUILayout.Button(_lookPaint ? "Paint off" : "Paint on", _button))
+            {
+                if (_lookPaint) _lookPaint = false;
+                else if (AppearanceBook.Hex(_lookTint)) _lookPaint = true;
+                else _status = "Pick a color before turning paint on.";
+            }
+            if (GUILayout.Button("Reset look", _button))
+            {
+                _lookBody = _savedBody;
+                _lookTint = _savedTint;
+                _lookPaint = _savedPaint;
+                Buf("hex").Text = _lookTint;
+                _status = "Restored the look that is already saved for " + row.Name + ".";
+            }
+            Section("Saved looks");
+            GUILayout.Label("Name this look, then save it. Saving does not change the character.", _label);
+            DrawBuffer("presetname", 64f);
+            if (GUILayout.Button("Save preset", _button))
+                SavePreset();
+            if (_presets.Presets != null)
+            {
+                for (int i = 0; i < _presets.Presets.Count; i++)
+                {
+                    var preset = _presets.Presets[i];
+                    if (preset == null) continue;
+                    if (GUILayout.Button("Use " + preset.Name + "   " + preset.Appearance, _button))
+                    {
+                        _lookBody = preset.Appearance;
+                        _lookTint = preset.Tint ?? "";
+                        _lookPaint = preset.Paint;
+                        Buf("hex").Text = _lookTint;
+                        _status = "Loaded " + preset.Name + " into the preview. The character is unchanged until you apply.";
+                    }
+                }
+            }
+            if (Wide("Apply to " + row.Name, new Color(0.98f, 0.62f, 0.18f, 1f)))
+                ApplyLook(row, false);
+            if (Wide("Save as a new character", new Color(0.55f, 0.86f, 0.70f, 1f)))
+                ApplyLook(row, true);
+        }
+
+        static void DrawSwatch()
+        {
+            var previous = GUI.color;
+            var caption = "Whole-body color. Not a 3D model.";
+            if (!_lookPaint)
+            {
+                GUI.color = new Color(0.75f, 0.75f, 0.75f, 1f);
+                caption = "Paint off. Shared materials. Not a 3D model.";
+            }
+            else if (TryLookColor(_lookTint, out var color))
+                GUI.color = color;
+            else
+            {
+                GUI.color = Color.white;
+                caption = "Color is not ready. Not a 3D model.";
+            }
+            GUILayout.Button(" ", _primary);
+            GUI.color = previous;
+            GUILayout.Label(caption + "  " + (_lookTint.Length == 0 ? "(no tint)" : _lookTint), _label);
+        }
+
+        static bool SwatchButton(string tint)
+        {
+            return GUILayout.Button(tint == _lookTint && _lookPaint ? "Selected " + tint : tint, _button);
+        }
+
+        static bool TryLookColor(string tint, out Color color)
+        {
+            color = Color.white;
+            if (!AppearanceBook.Hex(tint)) return false;
+            int r = Convert.ToInt32(tint.Substring(1, 2), 16);
+            int g = Convert.ToInt32(tint.Substring(3, 2), 16);
+            int b = Convert.ToInt32(tint.Substring(5, 2), 16);
+            color = new Color(r / 255f, g / 255f, b / 255f, 1f);
+            return true;
+        }
+
+        static void SavePreset()
+        {
+            var preset = new AppearancePreset
+            {
+                Name = (Buf("presetname").Text ?? "").Trim(),
+                Appearance = _lookBody,
+                Tint = _lookTint ?? "",
+                Paint = _lookPaint,
+            };
+            var problem = AppearanceBook.Problem(preset, _presets);
+            if (problem != null)
+            {
+                _status = problem + " The character list was not changed.";
+                return;
+            }
+            preset.Name = preset.Name.Trim();
+            try
+            {
+                if (_presets.Presets == null) _presets.Presets = new List<AppearancePreset>();
+                _presets.Presets.Add(preset);
+                AppearanceBook.Save(AppearanceBook.PathFor(Plugin.JsonPath), _presets);
+                _status = "Saved the look " + preset.Name + ". " + EditedName() + " was not changed.";
+            }
+            catch (Exception)
+            {
+                _presets.Presets.Remove(preset);
+                _status = "The look could not be saved. The character list was not changed.";
+            }
+        }
+
+        static void ApplyLook(StudioCharacter row, bool asNew)
+        {
+            if (Catalog.IndexOf(Catalog.Characters, _lookBody) < 0)
+            {
+                _status = "That body is not in the catalog. Nothing was written.";
+                return;
+            }
+            if (_lookPaint && !AppearanceBook.Hex(_lookTint))
+            {
+                _status = "Paint needs a hex color. Nothing was written.";
+                return;
+            }
+            Remember();
+            if (!asNew)
+            {
+                row.Appearance = _lookBody;
+                row.Tint = _lookTint ?? "";
+                row.Paint = _lookPaint;
+                Save();
+                _savedBody = row.Appearance;
+                _savedTint = row.Tint;
+                _savedPaint = row.Paint;
+                _status = "Updated the look of " + row.Name + " id " + row.Id + ". Stats, passive, and weapon are unchanged. Paint shows on the next launch.";
+                return;
+            }
+            var made = new StudioCharacter
+            {
+                Id = NextId(),
+                Name = row.Name,
+                Description = row.Description,
+                Author = row.Author,
+                Appearance = _lookBody,
+                Tint = _lookTint ?? "",
+                Paint = _lookPaint,
+                Passive = row.Passive,
+                Weapon = row.Weapon,
+                Portrait = row.Portrait,
+                Stats = new List<StudioStat>(),
+            };
+            if (row.Stats != null)
+            {
+                for (int i = 0; i < row.Stats.Count; i++)
+                {
+                    var stat = row.Stats[i];
+                    made.Stats.Add(new StudioStat { Stat = stat.Stat, Modify = stat.Modify, Amount = stat.Amount });
+                }
+            }
+            _file.Characters.Add(made);
+            Save();
+            _status = "Added id " + made.Id + " with this look. " + row.Name + " id " + row.Id + " was not changed.";
+        }
+
+        static int NextId()
+        {
+            if (_file.Characters.Count == 0) return 1842201100;
+            int ident = 1000;
+            for (int i = 0; i < _file.Characters.Count; i++)
+                if (_file.Characters[i].Id > ident) ident = _file.Characters[i].Id;
+            return ident + 1;
         }
 
         static void BeginCreate()
