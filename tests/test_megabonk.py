@@ -347,6 +347,7 @@ def test_build_script_requires_the_net10_sdk_and_keeps_net6():
     assert "Assets.Scripts.Saves___Serialization.Progression.Achievements" in registrar
     assert "Assets.Scripts.Saves___Serialization.Progression.Achievements" in plugin
     assert "List<Assets.Scripts.Inventory__Items__Pickups.Stats.StatModifier>" in registrar
+    assert ".description" not in registrar
 
 
 def test_doctor_on_an_empty_folder_lists_the_missing_files(tmp_path):

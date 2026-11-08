@@ -96,7 +96,8 @@ namespace UmMegabonkStudio
             unlock.sortingPriority = -100000;
             clone.achievementRequirement = null;
             clone.numQuestsRequiredForVisibilityInCharacterSelection = 0;
-            clone.description = draft.Description ?? "";
+            // CharacterData has no description field. GetDescription() returns the string;
+            // Hooks.DescriptionPrefix supplies draft.Description for this object.
 
             var live = new Live { Data = clone, Appearance = appearance };
             if (clone.statModifiers != null)
@@ -143,7 +144,6 @@ namespace UmMegabonkStudio
             int appearance = Catalog.IndexOf(Catalog.Characters, draft.Appearance);
             if (appearance >= 0 && (ECharacter)appearance != live.Appearance)
                 Plugin.Warn("'" + draft.Name + "' appearance change to " + draft.Appearance + " applies on the next launch.");
-            live.Data.description = draft.Description ?? "";
             Remember(live.Data, draft.Name, draft.Description ?? "");
             if (live.Skin != null) Remember(live.Skin, draft.Name, draft.Description ?? "");
             WriteStats(live.Data, live, draft);
