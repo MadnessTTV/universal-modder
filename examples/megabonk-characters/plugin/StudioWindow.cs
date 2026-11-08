@@ -33,8 +33,8 @@ namespace UmMegabonkStudio
             try { StudioWindow.Draw(); }
             catch (Exception ex)
             {
-                StudioWindow.EndOpenGroups();
-                Plugin.FailUi("OnGUI", ex);
+                Plugin.FailUi("OnGUI phase=" + StudioWindow.Phase, ex);
+                try { StudioWindow.EndOpenGroups(); } catch (Exception) { }
             }
         }
     }
@@ -69,6 +69,10 @@ namespace UmMegabonkStudio
         static readonly Dictionary<string, PromptBuffer> _buffers = new Dictionary<string, PromptBuffer>();
         static readonly List<string> _history = new List<string>();
 
+        public static string Phase = "idle";
+        static bool _drawFinished;
+        static bool _modifiersWarned;
+        static bool _characterWarned;
         public static bool BlockGameplayKeys { get { return _open && _focus != null; } }
 
         public static void Install()
@@ -161,20 +165,35 @@ namespace UmMegabonkStudio
                 return;
             }
             _wasOpen = true;
+            Phase = "keys";
             CaptureTyping(ev);
+            Phase = "model";
             NoteModel();
+            Phase = "styles";
             Styles();
             _area = false;
             _scroll = false;
+            Phase = "panel";
             _rect = new Rect(Screen.width * 0.05f, Screen.height * 0.04f, Screen.width * 0.90f, Screen.height * 0.92f);
             Fill(_rect, new Color(0.05f, 0.06f, 0.08f, 1f));
+            Phase = "area";
             GUILayout.BeginArea(_rect);
             _area = true;
             try
             {
+                Phase = "scroll";
                 _scrollPos = GUILayout.BeginScrollView(_scrollPos);
                 _scroll = true;
-                try { DrawBody(); }
+                try
+                {
+                    Phase = "body";
+                    DrawBody();
+                    if (!_drawFinished)
+                    {
+                        _drawFinished = true;
+                        Plugin.Info("Studio panel draw finished.");
+                    }
+                }
                 finally
                 {
                     GUILayout.EndScrollView();
@@ -205,7 +224,22 @@ namespace UmMegabonkStudio
 
         static void ApplyKey(PromptBuffer buf, Event ev)
         {
-            bool ctrl = (ev.control || ev.command) && !ev.alt;
+            Phase = "key";
+            bool ctrl = false;
+            bool shift = false;
+            try
+            {
+                ctrl = (ev.control || ev.command) && !ev.alt;
+                shift = ev.shift;
+            }
+            catch (Exception ex)
+            {
+                if (!_modifiersWarned)
+                {
+                    _modifiersWarned = true;
+                    Plugin.Warn("Key modifiers are unavailable: " + ex.GetType().Name);
+                }
+            }
             var key = ev.keyCode;
             if (ctrl && key == KeyCode.A) { buf.SelectAll(); return; }
             if (ctrl && key == KeyCode.C) { WriteCopy(buf.SelectedText()); return; }
@@ -224,15 +258,27 @@ namespace UmMegabonkStudio
             }
             if (key == KeyCode.Backspace) { buf.Backspace(); return; }
             if (key == KeyCode.Delete) { buf.Delete(); return; }
-            if (key == KeyCode.LeftArrow) { buf.Move("left", ev.shift, ctrl); return; }
-            if (key == KeyCode.RightArrow) { buf.Move("right", ev.shift, ctrl); return; }
-            if (key == KeyCode.UpArrow) { buf.Move("up", ev.shift, ctrl); return; }
-            if (key == KeyCode.DownArrow) { buf.Move("down", ev.shift, ctrl); return; }
-            if (key == KeyCode.Home) { buf.Move("home", ev.shift, ctrl); return; }
-            if (key == KeyCode.End) { buf.Move("end", ev.shift, ctrl); return; }
+            if (key == KeyCode.LeftArrow) { buf.Move("left", shift, ctrl); return; }
+            if (key == KeyCode.RightArrow) { buf.Move("right", shift, ctrl); return; }
+            if (key == KeyCode.UpArrow) { buf.Move("up", shift, ctrl); return; }
+            if (key == KeyCode.DownArrow) { buf.Move("down", shift, ctrl); return; }
+            if (key == KeyCode.Home) { buf.Move("home", shift, ctrl); return; }
+            if (key == KeyCode.End) { buf.Move("end", shift, ctrl); return; }
             if (key == KeyCode.Return || key == KeyCode.KeypadEnter) { buf.Insert("\n"); return; }
             if (ctrl) return;
-            if (ev.character >= ' ') buf.Insert(ev.character.ToString());
+            Phase = "key-character";
+            char ch = '\0';
+            try { ch = ev.character; }
+            catch (Exception ex)
+            {
+                if (!_characterWarned)
+                {
+                    _characterWarned = true;
+                    Plugin.Warn("Key character is unavailable: " + ex.GetType().Name);
+                }
+                return;
+            }
+            if (ch >= ' ') buf.Insert(ch.ToString());
         }
 
         static string ReadPaste()
@@ -275,9 +321,11 @@ namespace UmMegabonkStudio
 
         static void DrawBody()
         {
+            Phase = "top";
             DrawTop();
             if (_file == null) Reload();
             var screen = _session.Screen;
+            Phase = screen ?? "home";
             if (screen == "create_prompt") DrawCreatePrompt();
             else if (screen == "create_questions") DrawQuestions();
             else if (screen == "create_preview") DrawCreatePreview();
@@ -292,20 +340,14 @@ namespace UmMegabonkStudio
 
         static void DrawTop()
         {
-            var bar = GUILayoutUtility.GetRect(10f, 8f);
-            if (Event.current.type == EventType.Repaint)
-                Fill(bar, new Color(0.18f, 0.45f, 0.42f, 1f));
             GUILayout.Label("Megabonk Studio", _title);
             GUILayout.Label(_status, _label);
-            GUILayout.BeginHorizontal();
             if (GUILayout.Button("Close", _button))
                 RequestToggle();
             if (GUILayout.Button(_history.Count == 0 ? "Undo" : "Undo last change", _button) && _history.Count > 0)
                 Undo();
             if (_session.Screen != "home" && GUILayout.Button("Characters", _button))
                 GoHome();
-            GUILayout.EndHorizontal();
-            GUILayout.Space(8f);
         }
 
         static void DrawHome()
@@ -334,12 +376,9 @@ namespace UmMegabonkStudio
             for (int i = 0; i < rows.Count; i++)
             {
                 var row = rows[i];
-                GUILayout.BeginHorizontal();
-                GUILayout.Label(row.Name + "   look " + row.Appearance + "   id " + row.Id, _label, GUILayout.ExpandWidth(true));
-                if (GUILayout.Button("Edit " + row.Name, _button, GUILayout.Width(Screen.width * 0.28f)))
+                GUILayout.Label(row.Name + "   look " + row.Appearance + "   id " + row.Id, _label);
+                if (GUILayout.Button("Edit " + row.Name, _button))
                     BeginEdit(row.Id);
-                GUILayout.EndHorizontal();
-                GUILayout.Space(4f);
             }
             ConnectionLine();
         }
@@ -563,56 +602,27 @@ namespace UmMegabonkStudio
 
         static void DrawBuffer(string id, float height)
         {
+            Phase = "buffer";
             var buf = Buf(id);
-            var rect = GUILayoutUtility.GetRect(10f, height, GUILayout.ExpandWidth(true));
-            var ev = Event.current;
-            if (ev.type == EventType.Repaint)
-                Fill(rect, _focus == id ? new Color(0.10f, 0.14f, 0.16f, 1f) : new Color(0.03f, 0.04f, 0.05f, 1f));
-            if (ev.type == EventType.MouseDown && rect.Contains(ev.mousePosition))
-            {
-                _focus = id;
-                try { buf.SetCaret(CaretFromPoint(buf, rect, ev.mousePosition, _well), ev.shift); }
-                catch (Exception) { buf.SetCaret(buf.Text.Length, false); }
-                ev.Use();
-            }
-            var inner = new Rect(rect.x + 10f, rect.y + 8f, rect.width - 20f, rect.height - 16f);
             var blink = true;
             try { blink = ((int)(Time.realtimeSinceStartup * 2f) % 2) == 0; } catch (Exception) { }
             var shown = buf.Shown(_focus == id, blink);
-            if (shown.Trim().Length == 0 && _focus != id)
+            if ((buf.Text == null || buf.Text.Length == 0) && _focus != id)
                 shown = "Click here and type";
-            GUI.Label(inner, shown, _well);
-        }
-
-        static int CaretFromPoint(PromptBuffer buf, Rect rect, Vector2 mouse, GUIStyle style)
-        {
-            var text = buf.Text ?? "";
-            float lineH = style.fontSize + 8f;
-            float y = rect.y + 8f;
-            int index = 0;
-            var lines = text.Split('\n');
-            for (int i = 0; i < lines.Length; i++)
+            _well.fixedHeight = height;
+            var previous = GUI.color;
+            GUI.color = _focus == id ? new Color(0.75f, 0.95f, 0.86f, 1f) : Color.white;
+            if (GUILayout.Button(shown, _well))
             {
-                if (mouse.y < y + lineH || i == lines.Length - 1)
-                    return Math.Min(text.Length, index + ColumnAt(lines[i], mouse.x - rect.x - 10f, style));
-                index += lines[i].Length + 1;
-                y += lineH;
+                _focus = id;
+                if (buf.Caret == 0 && buf.Mark == 0 && buf.Text != null && buf.Text.Length > 0)
+                {
+                    buf.Caret = buf.Text.Length;
+                    buf.Mark = buf.Caret;
+                }
             }
-            return text.Length;
-        }
-
-        static int ColumnAt(string line, float x, GUIStyle style)
-        {
-            if (x <= 0f || line.Length == 0) return 0;
-            int lo = 0;
-            int hi = line.Length;
-            while (lo < hi)
-            {
-                int mid = (lo + hi + 1) / 2;
-                if (style.CalcSize(new GUIContent(line.Substring(0, mid))).x <= x) lo = mid;
-                else hi = mid - 1;
-            }
-            return lo;
+            GUI.color = previous;
+            _well.fixedHeight = 0f;
         }
 
         static void BeginCreate()
@@ -796,35 +806,30 @@ namespace UmMegabonkStudio
 
         static void Banner(string text, Color color)
         {
-            var rect = GUILayoutUtility.GetRect(10f, 8f);
-            if (Event.current.type == EventType.Repaint)
-                Fill(rect, color);
+            var previous = GUI.color;
+            GUI.color = color;
             GUILayout.Label(text, _section);
-            GUILayout.Space(6f);
+            GUI.color = previous;
         }
 
         static void Section(string title)
         {
-            GUILayout.Space(12f);
-            var rect = GUILayoutUtility.GetRect(10f, 4f);
-            if (Event.current.type == EventType.Repaint)
-                Fill(rect, new Color(0.45f, 0.75f, 0.68f, 1f));
             GUILayout.Label(title, _section);
         }
 
         static bool Wide(string text, Color color)
         {
-            var previous = GUI.backgroundColor;
-            GUI.backgroundColor = color;
+            Phase = "wide-button";
+            var previous = GUI.color;
+            GUI.color = color;
             var hit = GUILayout.Button(text, _primary);
-            GUI.backgroundColor = previous;
-            GUILayout.Space(6f);
+            GUI.color = previous;
             return hit;
         }
 
         static void ConnectionLine()
         {
-            GUILayout.Space(8f);
+            Phase = "connection";
             if (!AiClient.TryConfig(out var baseUrl, out var model, out _, out _))
                 GUILayout.Label("No model is connected. Nothing is sent until ai.json beside characters.json has base_url and model. The key stays in MEGABONK_AI_KEY in this game process.", _label);
             else
@@ -930,15 +935,8 @@ namespace UmMegabonkStudio
             _title.fontSize = Mathf.Clamp(size + 10, 28, 48);
             _section = new GUIStyle(_label);
             _section.fontSize = size + 2;
-            _well = new GUIStyle(_label);
+            _well = MakeButton(size, size * 4f);
             _well.wordWrap = true;
-            _well.fontSize = size;
-            var pad = new RectOffset();
-            pad.left = 8;
-            pad.right = 8;
-            pad.top = 6;
-            pad.bottom = 6;
-            _well.padding = pad;
             _button = MakeButton(size, size * 1.8f);
             _primary = MakeButton(size + 2, size * 2.8f);
         }

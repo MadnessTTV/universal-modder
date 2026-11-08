@@ -8,7 +8,7 @@ using HarmonyLib;
 
 namespace UmMegabonkStudio
 {
-    [BepInPlugin(Plugin.Guid, "Megabonk Studio", "0.3.0")]
+    [BepInPlugin(Plugin.Guid, "Megabonk Studio", "0.3.1")]
     public class Plugin : BasePlugin
     {
         public const string Guid = "um.megabonk.studio";
@@ -23,7 +23,7 @@ namespace UmMegabonkStudio
             var dir = Path.Combine(Paths.PluginPath, "UmMegabonkStudio");
             Directory.CreateDirectory(dir);
             JsonPath = Path.Combine(dir, "characters.json");
-            Info("Megabonk Studio 0.3.0. Drafts: " + JsonPath);
+            Info("Megabonk Studio 0.3.1. Drafts: " + JsonPath);
             Info("F7 is the in-game editor key. OnGUI has not run yet. Leaderboard uploads should stay Off. This plugin does not change that switch and does not write the save folder.");
             var harmony = new Harmony(Guid);
             InputGuard.Install(harmony);
@@ -78,8 +78,26 @@ namespace UmMegabonkStudio
             if (_uiDead) return;
             _uiDead = true;
             UiStopped = true;
-            LogSource.LogError("Studio UI stopped during " + where + ": " + ex.GetType().Name + " " + ex.Message);
+            LogSource.LogError("Studio UI stopped during " + where);
+            var guard = 0;
+            while (ex != null && guard < 6)
+            {
+                LogSource.LogError(SafeLog(ex.GetType().FullName + ": " + ex.Message));
+                if (!string.IsNullOrEmpty(ex.StackTrace))
+                    LogSource.LogError(SafeLog(ex.StackTrace));
+                ex = ex.InnerException;
+                guard++;
+            }
             LogSource.LogError("OnGUI will not run again this session, so it cannot keep capturing input. Edit characters.json with `um megabonk studio` and restart.");
+        }
+
+        static string SafeLog(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+            var bearer = text.IndexOf("Bearer ", StringComparison.OrdinalIgnoreCase);
+            if (bearer >= 0) text = text.Substring(0, bearer) + "Bearer [redacted]";
+            if (text.Length > 1800) text = text.Substring(0, 1800);
+            return text;
         }
     }
 

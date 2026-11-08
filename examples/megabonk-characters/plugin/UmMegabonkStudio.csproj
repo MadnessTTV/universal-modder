@@ -3,7 +3,7 @@
     <TargetFramework>net6.0</TargetFramework>
     <AssemblyName>UmMegabonkStudio</AssemblyName>
     <RootNamespace>UmMegabonkStudio</RootNamespace>
-    <Version>0.3.0</Version>
+    <Version>0.3.1</Version>
     <LangVersion>10</LangVersion>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>

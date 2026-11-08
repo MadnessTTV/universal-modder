@@ -533,6 +533,12 @@ def test_keyboard_buffer_and_create_flow_do_not_overwrite():
     assert "Apply as a new character" in window
     assert "Apply these changes" in window
     assert "ABCDEFGHIJKLMNOPQRSTUVWXYZ" not in window
+    assert "GUILayoutUtility" not in window
+    assert "backgroundColor" not in window
+    assert "Studio panel draw finished." in window
+    plugin_cs = (plugin / "Plugin.cs").read_text(encoding="utf-8")
+    assert "StackTrace" in plugin_cs
+    assert "phase=" in (plugin / "StudioWindow.cs").read_text(encoding="utf-8")
 
 
 def test_model_client_has_no_default_endpoint_and_the_panel_stays_button_only():
