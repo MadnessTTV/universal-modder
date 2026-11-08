@@ -513,7 +513,13 @@ namespace UmMegabonkStudio
             _button.fontSize = size;
             _button.fixedHeight = size * 2.1f;
             _button.wordWrap = true;
-            _button.border = new RectOffset(0, 0, 0, 0);
+            // This install's RectOffset has a parameterless constructor and left/right/top/bottom setters.
+            var border = new RectOffset();
+            border.left = 0;
+            border.right = 0;
+            border.top = 0;
+            border.bottom = 0;
+            _button.border = border;
             Paint(_button.normal);
             Paint(_button.hover);
             Paint(_button.active);

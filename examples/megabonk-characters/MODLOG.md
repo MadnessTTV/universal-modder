@@ -26,3 +26,4 @@
 - Build `5c5af03` failed CS0012 on `AudioClip` because `CharacterData.audioFootsteps` is typed in `UnityEngine.AudioModule`. That interop DLL is now referenced. The plugin was not compiled here.
 - `um megabonk studio` edits the same `characters.json`. That path is tested here.
 - The owner confirmed the installed `e865c46` build runs. Studio 0.2.0 replaces the cycling panel with an opaque list panel and adds an OpenAI-compatible client. No `ai.json` is shipped. No model, key, or hardware was available here, and nothing was sent. `review-model` and the draft validator are covered by tests. The new panel was not launched in the game.
+- Local compile of `1244f7a` failed CS1729: this install's `UnityEngine.RectOffset` has a parameterless constructor and `left`/`right`/`top`/`bottom` setters, not a four-int constructor. The button border is now built that way. Not compiled here.

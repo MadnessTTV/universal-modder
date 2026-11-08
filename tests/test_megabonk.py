@@ -437,6 +437,8 @@ def test_model_client_has_no_default_endpoint_and_the_panel_stays_button_only():
     assert "api.openai.com" not in client
     assert "sk-" not in client
     assert "TextField" not in window and "TextArea" not in window
+    assert "new RectOffset()" in window
+    assert "new RectOffset(" not in window.replace("new RectOffset()", "")
     assert "whiteTexture" in window
     assert "open list" in window
     assert "base_url" in window
