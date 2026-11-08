@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Reflection;
 using System.Reflection.Metadata;
+using System.Reflection.Metadata.Ecma335;
 using System.Reflection.PortableExecutable;
 
 // Read-only metadata dump. Opens a DLL as bytes and prints decoded signatures.
@@ -197,7 +198,8 @@ internal static class Program
         {
             var provider = new TypeNames(reader);
             var decoder = new SignatureDecoder<string, object>(provider, reader, null);
-            return decoder.DecodeFieldSignature(signature);
+            var blob = reader.GetBlobReader(signature);
+            return decoder.DecodeFieldSignature(ref blob);
         }
         catch (Exception)
         {
@@ -213,7 +215,8 @@ internal static class Program
         {
             var provider = new TypeNames(reader);
             var decoder = new SignatureDecoder<string, object>(provider, reader, null);
-            var sig = decoder.DecodeMethodSignature(method.Signature);
+            var blob = reader.GetBlobReader(method.Signature);
+            var sig = decoder.DecodeMethodSignature(ref blob);
             ret = sig.ReturnType ?? "UNKNOWN";
             var parts = new List<string>();
             int index = 0;
@@ -237,7 +240,7 @@ internal static class Program
         foreach (var handle in method.GetParameters())
         {
             var parameter = reader.GetParameter(handle);
-            if (parameter.Sequence == sequence) return reader.GetString(parameter.Name);
+            if (parameter.SequenceNumber == sequence) return reader.GetString(parameter.Name);
         }
         return "";
     }
@@ -324,7 +327,15 @@ internal static class Program
         public string GetTypeFromSpecification(MetadataReader reader, object genericContext, TypeSpecificationHandle handle, byte rawTypeKind)
         {
             var spec = reader.GetTypeSpecification(handle);
-            return new SignatureDecoder<string, object>(this, reader, genericContext).DecodeType(reader.GetBlobReader(spec.Signature), true);
+            var blob = reader.GetBlobReader(spec.Signature);
+            return new SignatureDecoder<string, object>(this, reader, genericContext).DecodeType(ref blob, true);
         }
     }
+}
+
+// Built into this assembly so the tool can be checked without a game DLL.
+internal sealed class SignatureFixture
+{
+    public SignatureFixture(int count, string name) { }
+    public static void Sample(ref int value, string[] names) { }
 }
