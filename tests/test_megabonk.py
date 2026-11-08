@@ -647,6 +647,12 @@ def test_appearance_edit_keeps_combat_fields_and_presets_reject_junk():
     assert "Appearance" in window and "Not a 3D model" in window
     assert "GUILayoutUtility" not in window and "backgroundColor" not in window
     assert "TextField" not in window and "TextArea" not in window
+    assert "WarnOnce" in window
+    assert "new Camera" not in window and "new RenderTexture" not in window
+    tool = (ROOT / "examples" / "megabonk-characters" / "plugin" / "tools" / "ListSignature" / "Program.cs").read_text(encoding="utf-8")
+    assert "CTOR" in tool and "DecodeMethodSignature" in tool
+    assert "exact type name" in tool
+    assert "truncated at 40 types" not in tool
 
 
 def test_model_client_has_no_default_endpoint_and_the_panel_stays_button_only():

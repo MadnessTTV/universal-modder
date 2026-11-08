@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Assets.Scripts.Saves___Serialization.Progression.Achievements;
 using BepInEx;
@@ -8,7 +9,7 @@ using HarmonyLib;
 
 namespace UmMegabonkStudio
 {
-    [BepInPlugin(Plugin.Guid, "Megabonk Studio", "0.3.4")]
+    [BepInPlugin(Plugin.Guid, "Megabonk Studio", "0.3.5")]
     public class Plugin : BasePlugin
     {
         public const string Guid = "um.megabonk.studio";
@@ -23,7 +24,7 @@ namespace UmMegabonkStudio
             var dir = Path.Combine(Paths.PluginPath, "UmMegabonkStudio");
             Directory.CreateDirectory(dir);
             JsonPath = Path.Combine(dir, "characters.json");
-            Info("Megabonk Studio 0.3.4. Drafts: " + JsonPath);
+            Info("Megabonk Studio 0.3.5. Drafts: " + JsonPath);
             Info("F7 is the in-game editor key. OnGUI has not run yet. Leaderboard uploads should stay Off. This plugin does not change that switch and does not write the save folder.");
             var harmony = new Harmony(Guid);
             InputGuard.Install(harmony);
@@ -72,6 +73,23 @@ namespace UmMegabonkStudio
 
         internal static void Info(string message) { LogSource.LogInfo(message); }
         internal static void Warn(string message) { LogSource.LogWarning(message); }
+
+        static readonly HashSet<string> _once = new HashSet<string>();
+
+        internal static void WarnOnce(string phase, Exception ex)
+        {
+            if (LogSource == null || !_once.Add(phase)) return;
+            LogSource.LogWarning("Preview stopped during phase=" + phase);
+            var guard = 0;
+            while (ex != null && guard < 6)
+            {
+                LogSource.LogWarning(SafeLog(ex.GetType().FullName + ": " + ex.Message));
+                if (!string.IsNullOrEmpty(ex.StackTrace))
+                    LogSource.LogWarning(SafeLog(ex.StackTrace));
+                ex = ex.InnerException;
+                guard++;
+            }
+        }
 
         internal static void FailUi(string where, Exception ex)
         {

@@ -704,7 +704,7 @@ namespace UmMegabonkStudio
                 return;
             }
             Banner(row.Name + " id " + row.Id + ". Stats, passive, and weapon stay.", new Color(0.98f, 0.62f, 0.18f, 1f));
-            DrawSwatch();
+            DrawPreview();
             GUILayout.Label(_lookPaint
                 ? "Body " + _lookBody + ". Paint on. One color for the whole body, including skin."
                 : "Body " + _lookBody + ". Paint off. The shared materials stay as they are.", _label);
@@ -780,6 +780,37 @@ namespace UmMegabonkStudio
                 ApplyLook(row, false);
             if (Wide("Save as a new character", new Color(0.55f, 0.86f, 0.70f, 1f)))
                 ApplyLook(row, true);
+        }
+
+        static bool _previewNoted;
+
+        static void DrawPreview()
+        {
+            Phase = "preview";
+            try
+            {
+                if (!TryModelPreview())
+                {
+                    DrawSwatch();
+                    if (!_previewNoted)
+                    {
+                        _previewNoted = true;
+                        Plugin.Info("Preview phase=swatch. No camera is created. Camera.Render, RenderTexture constructors, Behaviour.enabled, and GameObject.AddComponent are unconfirmed.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.WarnOnce("preview", ex);
+                try { DrawSwatch(); } catch (Exception) { }
+            }
+        }
+
+        static bool TryModelPreview()
+        {
+            // The truncated dump did not decode these signatures. Unknown is not the same as absent.
+            // Calling a guessed constructor can hit the stripped-method failure, so this stays off.
+            return false;
         }
 
         static void DrawSwatch()
