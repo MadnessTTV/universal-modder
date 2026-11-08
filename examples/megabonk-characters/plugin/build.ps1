@@ -36,6 +36,7 @@ $need = @(
     "core\BepInEx.Unity.IL2CPP.dll",
     "core\0Harmony.dll",
     "core\Il2CppInterop.Runtime.dll",
+    "interop\Il2Cppmscorlib.dll",
     "interop\Assembly-CSharp.dll",
     "interop\UnityEngine.dll",
     "interop\UnityEngine.CoreModule.dll",

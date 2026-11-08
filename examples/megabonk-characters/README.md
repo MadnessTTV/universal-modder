@@ -29,6 +29,16 @@ um megabonk studio set studio/characters.json --id 1842201001 --tint #FFD24A --s
 
 A different appearance applies on the next launch. Passive, weapon, tint and extra stats are written onto the live clone for the next run. The passive is one of the game's 21 effects. This does not invent a new one. Leaderboard uploads stay Off; the plugin does not touch that switch or the save folder.
 
+The first local build failed with CS0012 because `interop\Il2Cppmscorlib.dll` was not a reference. `Assembly-CSharp` and the Unity modules extend `Il2CppSystem.Object` in that DLL, so the compiler also reported `Il2CppSystem.Collections`, `UnlockableBase`, and `StatModifier` as missing. Those two game type names are unchanged. They are the names already used by the public loader and the Guz mod. The csproj now references `Il2Cppmscorlib.dll`. This session still has not produced the DLL.
+
+If the next build still names a missing type, print signatures only. This does not load the DLL as code:
+
+```powershell
+dotnet run --project examples\megabonk-characters\plugin\tools\ListSignature -- "%APPDATA%\Thunderstore Mod Manager\DataFolder\Megabonk\profiles\Default\BepInEx\interop\Assembly-CSharp.dll" UnlockableBase StatModifier
+```
+
+Paste that text. Do not send the DLL.
+
 If the build fails, paste the first compiler error (the missing type or method). Do not send any file from `interop\` or `core\`.
 
 ## Loader packs (need Unity 2023.2.22f1)

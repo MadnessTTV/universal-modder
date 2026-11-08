@@ -340,6 +340,8 @@ def test_build_script_requires_the_net10_sdk_and_keeps_net6():
     assert "Install the .NET 6 SDK" not in script
     assert "<TargetFramework>net6.0</TargetFramework>" in project
     assert "<CheckEolTargetFramework>false</CheckEolTargetFramework>" in project
+    assert "interop\\Il2Cppmscorlib.dll" in script
+    assert "Il2Cppmscorlib.dll" in project
 
 
 def test_doctor_on_an_empty_folder_lists_the_missing_files(tmp_path):

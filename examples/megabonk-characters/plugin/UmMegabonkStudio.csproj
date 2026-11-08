@@ -21,6 +21,10 @@
     <Reference Include="BepInEx.Unity.IL2CPP"><HintPath>$(MegabonkBepInEx)\core\BepInEx.Unity.IL2CPP.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="0Harmony"><HintPath>$(MegabonkBepInEx)\core\0Harmony.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Il2CppInterop.Runtime"><HintPath>$(MegabonkBepInEx)\core\Il2CppInterop.Runtime.dll</HintPath><Private>false</Private></Reference>
+    <!-- Assembly-CSharp and the Unity modules extend Il2CppSystem.Object. Without this
+         reference the compiler reports CS0012, then CS0234 for Il2CppSystem.Collections
+         and CS0246 for game types whose bases it could not load. -->
+    <Reference Include="Il2Cppmscorlib"><HintPath>$(MegabonkBepInEx)\interop\Il2Cppmscorlib.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Assembly-CSharp"><HintPath>$(MegabonkBepInEx)\interop\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>$(MegabonkBepInEx)\interop\UnityEngine.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(MegabonkBepInEx)\interop\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
