@@ -30,5 +30,8 @@
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(MegabonkBepInEx)\interop\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.IMGUIModule"><HintPath>$(MegabonkBepInEx)\interop\UnityEngine.IMGUIModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(MegabonkBepInEx)\interop\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
+    <!-- CharacterData.audioFootsteps is AudioClip[]. That type lives in AudioModule.
+         CoreModule does not re-export it, so the compiler reports CS0012 until this is referenced. -->
+    <Reference Include="UnityEngine.AudioModule"><HintPath>$(MegabonkBepInEx)\interop\UnityEngine.AudioModule.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>

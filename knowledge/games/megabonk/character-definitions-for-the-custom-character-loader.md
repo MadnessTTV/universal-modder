@@ -82,6 +82,7 @@ A shipped character mod clones `CharacterData` with `Instantiate`, stores it at 
 
 10. **The studio panel throws `Method unstripping failed` and then `pushing more GUIClips than popping`.** **Cause:** `GUILayout.TextField` calls stripped `TextEditor.SaveBackup`, and the exception skipped `EndScrollView`. **Fix:** buttons only, `Begin`/`End` in `finally`, and a stopped OnGUI makes no further GUI calls.
 11. **`PlayerRenderer.SetCharacter` throws `KeyNotFoundException` for a studio id.** **Cause:** `DataManager.GetSkins` is a direct `skinData` lookup, and the save config also has `characterSkins`. A clone missing either key hits `Dictionary.get_Item`. **Fix:** add the cloned skin under that id and add skin index 0 when the save map has no entry. Do not catch the exception inside `SetCharacter`.
+12. **Build fails CS0012 on `AudioClip`.** **Cause:** `CharacterData.audioFootsteps` is an `AudioClip` array, and that type is in `UnityEngine.AudioModule`, which the project had not referenced. **Fix:** reference `interop/UnityEngine.AudioModule.dll`. CoreModule does not re-export it.
 
 ## Open questions
 - Whether Flat modifiers set a stat or add to it, on the current build.

@@ -41,7 +41,8 @@ $need = @(
     "interop\UnityEngine.dll",
     "interop\UnityEngine.CoreModule.dll",
     "interop\UnityEngine.IMGUIModule.dll",
-    "interop\UnityEngine.InputLegacyModule.dll"
+    "interop\UnityEngine.InputLegacyModule.dll",
+    "interop\UnityEngine.AudioModule.dll"
 )
 foreach ($rel in $need) {
     $p = Join-Path $BepInEx $rel

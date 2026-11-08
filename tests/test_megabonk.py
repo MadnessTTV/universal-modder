@@ -341,6 +341,7 @@ def test_build_script_requires_the_net10_sdk_and_keeps_net6():
     assert "<TargetFramework>net6.0</TargetFramework>" in project
     assert "<CheckEolTargetFramework>false</CheckEolTargetFramework>" in project
     assert "interop\\Il2Cppmscorlib.dll" in script
+    assert "interop\\UnityEngine.AudioModule.dll" in script
     assert "Il2Cppmscorlib.dll" in project
     registrar = (ROOT / "examples" / "megabonk-characters" / "plugin" / "Registrar.cs").read_text(encoding="utf-8")
     plugin = (ROOT / "examples" / "megabonk-characters" / "plugin" / "Plugin.cs").read_text(encoding="utf-8")

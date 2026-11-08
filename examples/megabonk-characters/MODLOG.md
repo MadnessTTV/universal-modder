@@ -23,4 +23,5 @@
 - Build `08dd4c2` then failed CS1061: `CharacterData` has no `description`. The same dump lists `localizedDescription` on `UnlockableBase` and `GetDescription()` returning string. Both writes were removed. The GetDescription prefix still returns the draft text. Not compiled here.
 - Runtime of that DLL: OnGUI threw `Method unstripping failed` in `TextEditor.SaveBackup` from `GUILayout.TextField`, then GUIClips piled up because EndScrollView never ran. Text fields are gone. Begin and End are in finally blocks, and a failed OnGUI does not call GUI again.
 - `PlayerRenderer.SetCharacter` threw KeyNotFoundException for ids 1842201002 and 1842201003. `DataManager.GetSkins` is a one-lookup wrapper over `skinData`, and the save config has `characterSkins`. Both are filled for each clone, the same two maps the community loader writes. Vanilla hat lists are not edited. Not run here.
+- Build `5c5af03` failed CS0012 on `AudioClip` because `CharacterData.audioFootsteps` is typed in `UnityEngine.AudioModule`. That interop DLL is now referenced. The plugin was not compiled here.
 - `um megabonk studio` edits the same `characters.json`. That path is tested here.
