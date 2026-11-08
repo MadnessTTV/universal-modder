@@ -155,17 +155,19 @@ Loader, installed by you into a copy of the game
 Runtime clones (no Unity editor)
   Unity 6000.x cannot build a bundle for this game. The Studio plugin clones a vanilla
   CharacterData at runtime (the same Instantiate path a current character mod uses), then
-  sets the name, an existing passive, an existing weapon, extra stat modifiers, and an
-  optional #RRGGBB tint on _Color and _AlbedoColor when those properties exist.
+  sets the name, an existing passive, an existing weapon, and extra stat modifiers.
+  A #RRGGBB tint is stored. The mesh keeps the cloned character's materials.
   The game PC's dotnet.exe can be a runtime with an empty `dotnet --list-sdks`.
   Install the .NET 10 SDK (LTS until 15 November 2028). Leave TargetFramework net6.0.
   Do not install the .NET 6 SDK (support ended 13 November 2024).
     winget install Microsoft.DotNet.SDK.10
     powershell -File examples/megabonk-characters/plugin/build.ps1 -Install
   Drafts live in BepInEx/plugins/UmMegabonkStudio/characters.json
-  (`um megabonk studio`). F7 is the in-game editor. That window has not been seen in the
-  game yet. The log line "Studio UI OnGUI ran" is the check. Until it appears, edit the
-  json and restart.
+  (`um megabonk studio`). F7 opens the editor. It stays closed until then.
+  A model reply is checked with `um megabonk studio review-model`. Nothing is sent
+  unless ai.json next to characters.json has a base_url and a model. No provider
+  and no key are built in. The key, if a hosted server needs one, stays in the
+  MEGABONK_AI_KEY environment variable.
 
 Appearance
   The loader opens the file next to NAME.custom.json (the same path with .custom.json removed)
@@ -1212,9 +1214,12 @@ def uninstall(game: Path, ident: int | None = None, force: bool = False) -> list
 
 
 def _studio(a):
-    from um.megabonk_studio import add_character, format_studio, load_studio, save_studio, set_character, starter_file, validate_studio
+    from um.megabonk_studio import (
+        add_character, format_studio, interpret_model_message, load_studio, save_studio, set_character,
+        starter_file, validate_studio,
+    )
     if not getattr(a, "studio_cmd", None):
-        die("usage: um megabonk studio init|validate|add|set ...")
+        die("usage: um megabonk studio init|validate|add|set|review-model ...")
     path = Path(a.path)
     if a.studio_cmd == "init":
         if path.exists() and not a.force:
@@ -1230,6 +1235,13 @@ def _studio(a):
         data = json.loads(path.read_text(encoding="utf-8"))
         errors, warnings = validate_studio(data)
         raise SystemExit(_print_validation(errors, warnings))
+    if a.studio_cmd == "review-model":
+        ids = {int(x) for x in (a.existing_id or [])}
+        result = interpret_model_message(path.read_text(encoding="utf-8"), ids)
+        print(json.dumps(result, indent=2))
+        if not result.get("ok"):
+            raise SystemExit(1)
+        return
     data = load_studio(path)
     if a.studio_cmd == "add":
         row = add_character(data, a.name, a.appearance, a.author, a.id, a.passive or "", a.weapon or "", a.description or "")
@@ -1401,4 +1413,8 @@ def register(sub):
     s.add_argument("--tint", help="#RRGGBB or empty")
     s.add_argument("--clear-stats", action="store_true")
     s.add_argument("--stat", action="append", default=[], help="Stat:Modify:amount, repeatable")
+    s.set_defaults(func=main)
+    s = ss.add_parser("review-model", help="check a saved model reply without contacting a server")
+    s.add_argument("path")
+    s.add_argument("--existing-id", action="append", default=[], dest="existing_id")
     s.set_defaults(func=main)

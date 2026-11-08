@@ -282,6 +282,189 @@ def _apply_changes(data: dict, row: dict, changes: dict) -> dict:
     return row
 
 
+CHARACTER_KEYS = {
+    "name", "description", "author", "appearance", "tint", "passive", "weapon", "portrait", "stats",
+}
+STAT_KEYS = {"stat", "modify", "amount"}
+MESSAGE_KEYS = {"type", "questions", "character"}
+
+
+def _extract_typed_object(text: str) -> dict:
+    raw = text.strip()
+    if raw.startswith("```"):
+        lines = raw.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        raw = "\n".join(lines).strip()
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(raw):
+        if ch != "{":
+            continue
+        try:
+            obj, _end = decoder.raw_decode(raw[i:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict) and "type" in obj:
+            return obj
+    raise MegabonkError("model reply has no JSON object with a type field")
+
+
+def _draft_errors(row: dict) -> list[str]:
+    errors = []
+    if not isinstance(row, dict):
+        return ["character must be an object"]
+    extra = sorted(set(row) - CHARACTER_KEYS)
+    if extra:
+        errors.append("unknown character fields: " + ", ".join(extra))
+    if "id" in row:
+        errors.append("the model must not choose an id")
+    for key in ("name", "description", "author"):
+        if not isinstance(row.get(key), str) or not row[key].strip():
+            errors.append(f"{key} must be a non-empty string")
+    try:
+        _canon(_BY_CHAR, row.get("appearance"), "appearance")
+    except MegabonkError as e:
+        errors.append(str(e))
+    tint = row.get("tint", "")
+    if tint not in ("", None) and (not isinstance(tint, str) or not TINT.match(tint)):
+        errors.append("tint must be empty or #RRGGBB")
+    try:
+        _optional(_BY_PASSIVE, row.get("passive", ""), "passive")
+        _optional(_BY_WEAPON, row.get("weapon", ""), "weapon")
+    except MegabonkError as e:
+        errors.append(str(e))
+    portrait = row.get("portrait", "")
+    if portrait not in ("", None) and (
+        not isinstance(portrait, str) or portrait.startswith(("/", "\\")) or ".." in portrait or "://" in portrait
+    ):
+        errors.append("portrait must be empty or a relative file name")
+    stats = row.get("stats", [])
+    if stats is None:
+        stats = []
+    if not isinstance(stats, list):
+        errors.append("stats must be a list")
+        return errors
+    used = set()
+    for i, stat in enumerate(stats):
+        if not isinstance(stat, dict):
+            errors.append(f"stats[{i}] must be an object")
+            continue
+        extra_s = sorted(set(stat) - STAT_KEYS)
+        if extra_s:
+            errors.append(f"stats[{i}] unknown fields: " + ", ".join(extra_s))
+        try:
+            name = _canon(_BY_STAT, stat.get("stat"), f"stats[{i}].stat")
+            _canon(_BY_MODIFY, stat.get("modify"), f"stats[{i}].modify")
+            _num(stat.get("amount"), f"stats[{i}].amount")
+        except MegabonkError as e:
+            errors.append(str(e))
+            continue
+        if name in used:
+            errors.append(f"{name} is listed twice")
+        used.add(name)
+    return errors
+
+
+def _normalize_draft(row: dict) -> dict:
+    stats = []
+    for stat in row.get("stats") or []:
+        stats.append({
+            "stat": _canon(_BY_STAT, stat["stat"], "stat"),
+            "modify": _canon(_BY_MODIFY, stat["modify"], "modify"),
+            "amount": _num(stat["amount"], "amount"),
+        })
+    return {
+        "name": row["name"].strip(),
+        "description": row["description"].strip(),
+        "author": row["author"].strip(),
+        "appearance": _canon(_BY_CHAR, row["appearance"], "appearance"),
+        "tint": row.get("tint") or "",
+        "passive": _optional(_BY_PASSIVE, row.get("passive", ""), "passive"),
+        "weapon": _optional(_BY_WEAPON, row.get("weapon", ""), "weapon"),
+        "portrait": row.get("portrait") or "",
+        "stats": stats,
+    }
+
+
+def interpret_model_message(text: str, existing_ids: set[int] | None = None) -> dict:
+    """Read one model reply. Does not contact a server and does not change a character file."""
+    del existing_ids  # ids are assigned on apply; a model-supplied id is rejected below
+    try:
+        obj = _extract_typed_object(text)
+    except MegabonkError as e:
+        return {"ok": False, "error": str(e)}
+    extra = sorted(set(obj) - MESSAGE_KEYS)
+    if extra:
+        return {"ok": False, "error": "unknown message fields: " + ", ".join(extra)}
+    kind = obj.get("type")
+    if kind == "questions":
+        if "character" in obj:
+            return {"ok": False, "error": "a question reply must not include a character"}
+        questions = obj.get("questions")
+        if not isinstance(questions, list) or not questions or len(questions) > 8:
+            return {"ok": False, "error": "questions must be a list of 1 to 8 strings"}
+        cleaned = []
+        for i, q in enumerate(questions):
+            if not isinstance(q, str) or not q.strip():
+                return {"ok": False, "error": f"questions[{i}] must be a non-empty string"}
+            cleaned.append(q.strip())
+        return {"ok": True, "kind": "questions", "questions": cleaned}
+    if kind == "draft":
+        if "questions" in obj:
+            return {"ok": False, "error": "a draft reply must not include questions"}
+        errors = _draft_errors(obj.get("character"))
+        if errors:
+            return {"ok": False, "error": "; ".join(errors)}
+        return {"ok": True, "kind": "draft", "character": _normalize_draft(obj["character"])}
+    return {"ok": False, "error": "type must be questions or draft"}
+
+
+def allocate_id(studio: dict) -> int:
+    used = {int(row["id"]) for row in studio.get("characters") or []}
+    ident = max([MIN_ID, *used]) + 1 if used else 1842201100
+    if ident < MIN_ID or ident > MAX_ID:
+        raise MegabonkError(f"could not allocate an id (next would be {ident})")
+    return ident
+
+
+def apply_model_draft(studio: dict, draft: dict, onto_id: int | None = None) -> dict:
+    """Return a new studio file. The model draft must already have passed interpret_model_message."""
+    studio = copy.deepcopy(studio)
+    if onto_id is None:
+        row = dict(draft)
+        row["id"] = allocate_id(studio)
+        row["stats"] = copy.deepcopy(draft.get("stats") or [])
+        studio.setdefault("characters", []).append(row)
+    else:
+        target = None
+        for row in studio["characters"]:
+            if int(row["id"]) == onto_id:
+                target = row
+                break
+        if target is None:
+            raise MegabonkError(f"no character with id {onto_id}")
+        kept = target["id"]
+        target.clear()
+        target.update(copy.deepcopy(draft))
+        target["id"] = kept
+    errors, _warnings = validate_studio(studio)
+    if errors:
+        raise MegabonkError("refusing to apply:\n" + "\n".join(errors))
+    return studio
+
+
+def push_snapshot(history: list, snapshot: str, limit: int = 20) -> list:
+    return (list(history) + [snapshot])[-limit:]
+
+
+def undo_snapshot(history: list) -> tuple[str, list]:
+    if not history:
+        raise MegabonkError("nothing to undo")
+    return history[-1], list(history[:-1])
+
+
 def format_studio(data: dict) -> str:
     lines = [f"{data.get('format')} v{data.get('format_version')}", ""]
     for row in data.get("characters") or []:

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using Il2CppInterop.Runtime.Injection;
 using UnityEngine;
 
@@ -17,6 +18,7 @@ namespace UmMegabonkStudio
             if (Plugin.UiStopped) return;
             try
             {
+                AiClient.Poll();
                 if (UnityEngine.Input.GetKeyDown(KeyCode.F7))
                     StudioWindow.RequestToggle();
             }
@@ -140,8 +142,9 @@ namespace UmMegabonkStudio
             Styles();
             _area = false;
             _scroll = false;
-            _rect = new Rect(Screen.width * 0.08f, Screen.height * 0.06f, Screen.width * 0.84f, Screen.height * 0.88f);
-            GUILayout.BeginArea(_rect, GUI.skin.window);
+            _rect = new Rect(Screen.width * 0.06f, Screen.height * 0.04f, Screen.width * 0.88f, Screen.height * 0.92f);
+            Fill(_rect, new Color(0.04f, 0.05f, 0.07f, 1f));
+            GUILayout.BeginArea(_rect);
             _area = true;
             try
             {
@@ -161,63 +164,291 @@ namespace UmMegabonkStudio
             }
         }
 
+        static string _menu = "";
+        static string _filter = "";
+        static string _prompt = "";
+        static bool _editPrompt;
+        static readonly List<string> _history = new List<string>();
+
         static void DrawBody()
         {
             GUILayout.Label("Megabonk Studio", _label);
-            GUILayout.Label("F7 or Close hides this panel. While it is closed, this plugin does not draw and does not keep a text cursor.", _label);
+            GUILayout.Label("F7 or Close hides this panel. While it is closed, this plugin does not draw.", _label);
+            GUILayout.Label("A passive is one of the 21 existing effects. A weapon is one of the existing weapons. Appearance clones that character's model. A new 3D model and a new kind of ability are not available here.", _label);
+            GUILayout.Label("Stat amounts are the game's own numbers. Addition adds to the additive component. Multiplication affects the multiplicative component. Flat is the third published mode; its formula was not re-measured. Crit chance treats 1 as 100%.", _label);
             GUILayout.Label(_status, _label);
             if (GUILayout.Button("Close (F7)", _button))
                 RequestToggle();
+            if (GUILayout.Button(_history.Count == 0 ? "Undo (nothing saved yet)" : "Undo last apply", _button) && _history.Count > 0)
+                Undo();
             if (_file == null) Reload();
             var rows = _file.Characters;
-            if (rows.Count == 0) GUILayout.Label("No characters in " + Plugin.JsonPath, _label);
+            GUILayout.Label("Characters", _label);
             for (int i = 0; i < rows.Count; i++)
             {
                 var mark = i == _index ? "Selected: " : "Select: ";
                 if (GUILayout.Button(mark + rows[i].Name + "    look " + rows[i].Appearance, _button))
+                {
                     _index = i;
+                    _menu = "";
+                }
             }
-            if (rows.Count == 0) return;
+            if (rows.Count == 0)
+            {
+                ModelSection(null);
+                return;
+            }
             if (_index < 0 || _index >= rows.Count) _index = 0;
             var cur = rows[_index];
-            GUILayout.Label("Appearance, passive, and weapon are the game's existing ones. Click a row to change it.", _label);
-            if (GUILayout.Button("Appearance:  " + cur.Appearance, _button))
-                cur.Appearance = Step(Catalog.Characters, cur.Appearance, 1);
-            if (GUILayout.Button("Passive:  " + (string.IsNullOrEmpty(cur.Passive) ? "keep " + cur.Appearance : cur.Passive), _button))
-                cur.Passive = Step(WithBlank(Catalog.Passives), cur.Passive, 1);
-            if (GUILayout.Button("Weapon:  " + (string.IsNullOrEmpty(cur.Weapon) ? "keep " + cur.Appearance : cur.Weapon), _button))
-                cur.Weapon = Step(WithBlank(Catalog.Weapons), cur.Weapon, 1);
+            Picker("Appearance", cur.Appearance, Catalog.Characters, value => cur.Appearance = value, false);
+            var passiveShown = string.IsNullOrEmpty(cur.Passive) ? "(keep cloned passive)" : cur.Passive;
+            Picker("Passive", passiveShown, WithBlank(Catalog.Passives), value => cur.Passive = value, true);
+            var weaponShown = string.IsNullOrEmpty(cur.Weapon) ? "(keep cloned weapon)" : cur.Weapon;
+            Picker("Weapon", weaponShown, WithBlank(Catalog.Weapons), value => cur.Weapon = value, true);
+            GUILayout.Label("Tint is stored as a color. The 3D model keeps the cloned character's materials.", _label);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(string.IsNullOrEmpty(cur.Tint) ? "Tint: none" : "Tint: " + cur.Tint, _button))
+                cur.Tint = "";
+            if (GUILayout.Button("Gold", _button)) cur.Tint = "#FFD24A";
+            if (GUILayout.Button("Lilac", _button)) cur.Tint = "#E0C0FF";
+            if (GUILayout.Button("White", _button)) cur.Tint = "#FFFFFF";
+            GUILayout.EndHorizontal();
             GUILayout.Label("Name:  " + cur.Name, _label);
             if (GUILayout.Button(_editName ? "Done editing name" : "Edit name", _button))
-                _editName = !_editName;
-            if (_editName) NameKeys(cur);
-            GUILayout.Label("Extra stats on top of " + cur.Appearance + ". The buttons change the number. Nothing here uses a text box.", _label);
-            if (cur.Stats == null) cur.Stats = new List<StudioStat>();
-            for (int i = 0; i < cur.Stats.Count; i++)
             {
-                var stat = cur.Stats[i];
-                GUILayout.Label(stat.Stat + "  " + stat.Modify + "  " + stat.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture), _label);
-                GUILayout.BeginHorizontal();
-                if (GUILayout.Button(stat.Stat, _button))
-                    stat.Stat = Step(Catalog.Stats, stat.Stat, 1);
-                if (GUILayout.Button("-1", _button)) stat.Amount -= 1f;
-                if (GUILayout.Button("+1", _button)) stat.Amount += 1f;
-                if (GUILayout.Button("-0.1", _button)) stat.Amount -= 0.1f;
-                if (GUILayout.Button("+0.1", _button)) stat.Amount += 0.1f;
-                if (GUILayout.Button("Remove", _button))
-                {
-                    cur.Stats.RemoveAt(i);
-                    i--;
-                }
-                GUILayout.EndHorizontal();
+                _editName = !_editName;
+                _editPrompt = false;
             }
-            if (GUILayout.Button("Add stat", _button))
-                cur.Stats.Add(new StudioStat { Stat = "MaxHealth", Modify = "Addition", Amount = 0f });
-            if (GUILayout.Button("Save", _button))
+            if (_editName) NameKeys(() => cur.Name ?? "", value => cur.Name = value);
+            GUILayout.Label("Every supported stat. Unchanged means this character does not add an extra modifier.", _label);
+            for (int s = 0; s < Catalog.Stats.Length; s++)
+            {
+                var name = Catalog.Stats[s];
+                StudioStat have = null;
+                if (cur.Stats != null)
+                {
+                    foreach (var stat in cur.Stats)
+                        if (stat.Stat == name) have = stat;
+                }
+                var line = have == null
+                    ? name + ": unchanged"
+                    : name + ": " + have.Modify + " " + have.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                GUILayout.Label(line, _label);
+                if (have != null)
+                {
+                    GUILayout.BeginHorizontal();
+                    if (GUILayout.Button("Addition", _button)) have.Modify = "Addition";
+                    if (GUILayout.Button("Multiplication", _button)) have.Modify = "Multiplication";
+                    if (GUILayout.Button("Flat", _button)) have.Modify = "Flat";
+                    if (GUILayout.Button("-1", _button)) have.Amount -= 1f;
+                    if (GUILayout.Button("+1", _button)) have.Amount += 1f;
+                    if (GUILayout.Button("-0.1", _button)) have.Amount -= 0.1f;
+                    if (GUILayout.Button("+0.1", _button)) have.Amount += 0.1f;
+                    if (GUILayout.Button("Remove", _button)) cur.Stats.Remove(have);
+                    GUILayout.EndHorizontal();
+                }
+            }
+            if (GUILayout.Button(_menu == "addstat" ? "Close stat list" : "Add a stat", _button))
+            {
+                _menu = _menu == "addstat" ? "" : "addstat";
+                _filter = "";
+            }
+            if (_menu == "addstat")
+            {
+                FilterKeys();
+                for (int s = 0; s < Catalog.Stats.Length; s++)
+                {
+                    var name = Catalog.Stats[s];
+                    if (_filter.Length > 0 && name.IndexOf(_filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    if (GUILayout.Button("Add " + name, _button))
+                    {
+                        if (cur.Stats == null) cur.Stats = new List<StudioStat>();
+                        var exists = false;
+                        foreach (var stat in cur.Stats) if (stat.Stat == name) exists = true;
+                        if (!exists) cur.Stats.Add(new StudioStat { Stat = name, Modify = "Addition", Amount = 0f });
+                        _menu = "";
+                    }
+                }
+            }
+            if (GUILayout.Button("Save manual edits", _button))
                 Save();
+            ModelSection(cur);
         }
 
-        static void NameKeys(StudioCharacter cur)
+        static void Picker(string label, string current, string[] values, Action<string> set, bool blankLabel)
+        {
+            var open = _menu == label;
+            if (GUILayout.Button(label + ":  " + current + (open ? "    (close list)" : "    (open list)"), _button))
+            {
+                _menu = open ? "" : label;
+                _filter = "";
+            }
+            if (!open) return;
+            FilterKeys();
+            for (int i = 0; i < values.Length; i++)
+            {
+                var value = values[i];
+                var shown = value.Length == 0 ? "(keep cloned)" : value;
+                if (_filter.Length > 0 && shown.IndexOf(_filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                if (GUILayout.Button(shown, _button))
+                {
+                    set(blankLabel && value.Length == 0 ? "" : value);
+                    _menu = "";
+                }
+            }
+        }
+
+        static void FilterKeys()
+        {
+            GUILayout.Label("Filter: " + (_filter.Length == 0 ? "(all)" : _filter), _label);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Clear filter", _button)) _filter = "";
+            if (GUILayout.Button("Backspace", _button) && _filter.Length > 0)
+                _filter = _filter.Substring(0, _filter.Length - 1);
+            GUILayout.EndHorizontal();
+            LetterRow(ch => _filter += ch);
+        }
+
+        static bool _lower;
+
+        static void NameKeys(Func<string> get, Action<string> assign)
+        {
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Backspace", _button) && get().Length > 0)
+                assign(get().Substring(0, get().Length - 1));
+            if (GUILayout.Button("Space", _button))
+                assign(get() + " ");
+            if (GUILayout.Button(_lower ? "Letters: lower" : "Letters: UPPER", _button))
+                _lower = !_lower;
+            GUILayout.EndHorizontal();
+            LetterRow(ch => assign(get() + ch));
+            DigitRow(ch => assign(get() + ch));
+        }
+
+        static void ModelSection(StudioCharacter selected)
+        {
+            GUILayout.Label("Model", _label);
+            GUILayout.Label(AiClient.Status, _label);
+            if (!AiClient.TryConfig(out var baseUrl, out var model, out _, out _))
+            {
+                GUILayout.Label("No model is connected. Nothing is sent. To connect one, create ai.json beside characters.json with base_url and model. A local OpenAI-compatible server uses its own address, for example http://127.0.0.1:11434/v1, and the model name it is already running, with no key. A hosted server uses its https address ending in /v1, and the key stays in the MEGABONK_AI_KEY environment variable. This build does not download a model, buy credits, or pick a provider.", _label);
+            }
+            else
+            {
+                GUILayout.Label("Configured server " + baseUrl + ", model " + model + ". A key, when the server needs one, is read from the environment and is not shown or saved.", _label);
+            }
+            foreach (var question in AiClient.Questions)
+                GUILayout.Label("Question: " + question, _label);
+            if (AiClient.Pending != null)
+            {
+                var pending = AiClient.Pending;
+                GUILayout.Label("Pending draft " + pending.Name + " looks like " + pending.Appearance
+                    + ", passive " + (string.IsNullOrEmpty(pending.Passive) ? "(cloned)" : pending.Passive)
+                    + ", weapon " + (string.IsNullOrEmpty(pending.Weapon) ? "(cloned)" : pending.Weapon)
+                    + ". It is not in the character list until you apply it.", _label);
+                if (GUILayout.Button("Apply as a new character", _button))
+                    ApplyPending(null);
+                if (selected != null && GUILayout.Button("Apply onto " + selected.Name + ", keeping its id", _button))
+                    ApplyPending(selected);
+                if (GUILayout.Button("Discard draft", _button))
+                    AiClient.ClearPending();
+            }
+            GUILayout.Label("Prompt: " + (_prompt.Length == 0 ? "(empty)" : _prompt), _label);
+            if (GUILayout.Button(_editPrompt ? "Done editing prompt" : "Edit prompt", _button))
+            {
+                _editPrompt = !_editPrompt;
+                _editName = false;
+            }
+            if (_editPrompt)
+                NameKeys(() => _prompt, value => _prompt = value);
+            if (GUILayout.Button(AiClient.Busy ? "Waiting for the model" : "Send prompt", _button) && !AiClient.Busy)
+            {
+                var context = selected == null ? "" : JsonSerializer.Serialize(selected);
+                AiClient.Ask(_prompt, context);
+            }
+        }
+
+        static void ApplyPending(StudioCharacter onto)
+        {
+            var draft = AiClient.Pending;
+            if (draft == null || _file == null) return;
+            var slot = -1;
+            if (onto != null)
+            {
+                for (int i = 0; i < _file.Characters.Count; i++)
+                    if (_file.Characters[i].Id == onto.Id) slot = i;
+                if (slot < 0)
+                {
+                    _status = "The selected character was not in the list. Nothing was written.";
+                    return;
+                }
+            }
+            Remember();
+            if (onto == null)
+            {
+                int ident;
+                if (_file.Characters.Count == 0)
+                    ident = 1842201100;
+                else
+                {
+                    ident = 1000;
+                    foreach (var row in _file.Characters)
+                        if (row.Id > ident) ident = row.Id;
+                    ident += 1;
+                }
+                draft.Id = ident;
+                _file.Characters.Add(draft);
+                _index = _file.Characters.Count - 1;
+            }
+            else
+            {
+                draft.Id = onto.Id;
+                _file.Characters[slot] = draft;
+                _index = slot;
+            }
+            AiClient.Pending = null;
+            Save();
+            _status = "Applied the model draft. Undo restores the previous character list.";
+        }
+
+        static void Remember()
+        {
+            try
+            {
+                _history.Add(JsonSerializer.Serialize(_file));
+                if (_history.Count > 20) _history.RemoveAt(0);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Warn("Could not snapshot before apply: " + ex.Message);
+            }
+        }
+
+        static void Undo()
+        {
+            var raw = _history[_history.Count - 1];
+            _history.RemoveAt(_history.Count - 1);
+            _file = JsonSerializer.Deserialize<StudioFile>(raw, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (_file == null || _file.Characters == null)
+            {
+                Reload();
+                _status = "Undo failed. The character list was reloaded from disk.";
+                return;
+            }
+            if (_index >= _file.Characters.Count) _index = 0;
+            Save();
+            _status = "Restored the previous character list.";
+        }
+
+        static void Fill(Rect rect, Color color)
+        {
+            var previous = GUI.color;
+            GUI.color = color;
+            GUI.DrawTexture(rect, Texture2D.whiteTexture);
+            GUI.color = previous;
+        }
+
+        static void LetterRow(Action<char> add)
         {
             const string letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
             GUILayout.BeginHorizontal();
@@ -228,15 +459,24 @@ namespace UmMegabonkStudio
                     GUILayout.EndHorizontal();
                     GUILayout.BeginHorizontal();
                 }
-                var ch = letters.Substring(i, 1);
-                if (GUILayout.Button(ch, _button))
-                    cur.Name = (cur.Name ?? "") + ch;
+                var ch = letters[i];
+                var shown = _lower ? char.ToLowerInvariant(ch) : ch;
+                if (GUILayout.Button(shown.ToString(), _button))
+                    add(shown);
             }
             GUILayout.EndHorizontal();
+        }
+
+        static void DigitRow(Action<char> add)
+        {
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Space", _button)) cur.Name = (cur.Name ?? "") + " ";
-            if (GUILayout.Button("Backspace", _button) && !string.IsNullOrEmpty(cur.Name))
-                cur.Name = cur.Name.Substring(0, cur.Name.Length - 1);
+            const string digits = "0123456789";
+            for (int i = 0; i < digits.Length; i++)
+            {
+                var ch = digits[i];
+                if (GUILayout.Button(ch.ToString(), _button))
+                    add(ch);
+            }
             GUILayout.EndHorizontal();
         }
 
@@ -268,24 +508,27 @@ namespace UmMegabonkStudio
             _label = new GUIStyle(GUI.skin.label);
             _label.fontSize = size;
             _label.wordWrap = true;
+            _label.normal.textColor = Color.white;
             _button = new GUIStyle(GUI.skin.button);
             _button.fontSize = size;
             _button.fixedHeight = size * 2.1f;
+            _button.wordWrap = true;
+            _button.border = new RectOffset(0, 0, 0, 0);
+            Paint(_button.normal);
+            Paint(_button.hover);
+            Paint(_button.active);
+            Paint(_button.focused);
+            Paint(_button.onNormal);
+            Paint(_button.onHover);
+            Paint(_button.onActive);
+            Paint(_button.onFocused);
         }
 
-        static string Step(string[] values, string current, int dir)
+        static void Paint(GUIStyleState state)
         {
-            int i = 0;
-            for (int n = 0; n < values.Length; n++)
-            {
-                if (string.Equals(values[n], current ?? "", StringComparison.OrdinalIgnoreCase))
-                {
-                    i = n;
-                    break;
-                }
-            }
-            i = (i + dir + values.Length) % values.Length;
-            return values[i];
+            if (state == null) return;
+            state.background = Texture2D.whiteTexture;
+            state.textColor = Color.black;
         }
 
         static string[] WithBlank(string[] values)

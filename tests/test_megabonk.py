@@ -7,7 +7,18 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from um.megabonk_studio import add_character, load_studio, save_studio, set_character, starter_file, validate_studio
+from um.megabonk_studio import (
+    add_character,
+    apply_model_draft,
+    interpret_model_message,
+    load_studio,
+    push_snapshot,
+    save_studio,
+    set_character,
+    starter_file,
+    undo_snapshot,
+    validate_studio,
+)
 from um.megabonk import (
     CATEGORIES,
     CHARACTERS,
@@ -354,6 +365,81 @@ def test_build_script_requires_the_net10_sdk_and_keeps_net6():
     assert "keyboardControl" in window
     assert "skinData.Add" in registrar
     assert "characterSkins" in registrar
+
+
+def _draft_message(**extra):
+    character = {
+        "name": "Cinder",
+        "description": "A spark.",
+        "author": "local",
+        "appearance": "fox",
+        "tint": "#ffd24a",
+        "passive": "float",
+        "weapon": "axe",
+        "stats": [{"stat": "CritChance", "modify": "Addition", "amount": 0.15}],
+    }
+    character.update(extra)
+    return json.dumps({"type": "draft", "character": character})
+
+
+def test_model_reply_accepts_questions_and_a_catalog_draft():
+    asked = interpret_model_message('```json\n{"type":"questions","questions":["Which look?"]}\n```')
+    assert asked == {"ok": True, "kind": "questions", "questions": ["Which look?"]}
+    parsed = interpret_model_message(_draft_message())
+    assert parsed["ok"] is True and parsed["kind"] == "draft"
+    assert parsed["character"]["appearance"] == "Fox"
+    assert parsed["character"]["passive"] == "Float"
+    assert parsed["character"]["weapon"] == "Axe"
+    assert parsed["character"]["tint"] == "#ffd24a"
+    assert "id" not in parsed["character"]
+    original = starter_file()
+    before = json.dumps(original)
+    applied = apply_model_draft(original, parsed["character"])
+    assert json.dumps(original) == before
+    assert applied["characters"][-1]["id"] == 1842201004
+    assert applied["characters"][-1]["name"] == "Cinder"
+    onto = apply_model_draft(original, parsed["character"], onto_id=1842201001)
+    assert onto["characters"][0]["id"] == 1842201001
+    assert onto["characters"][0]["name"] == "Cinder"
+    assert onto["characters"][0]["appearance"] == "Fox"
+    history = push_snapshot([], before)
+    restored, history = undo_snapshot(history)
+    assert json.loads(restored)["characters"][0]["name"] == "Lumen"
+    assert history == []
+    with pytest.raises(MegabonkError, match="nothing to undo"):
+        undo_snapshot([])
+
+
+def test_model_reply_rejects_unknown_fields_effects_and_ids():
+    assert interpret_model_message(_draft_message(id=1842201001))["ok"] is False
+    assert interpret_model_message(_draft_message(script="System.Diagnostics.Process.Start"))["ok"] is False
+    bad_stat = _draft_message(stats=[{"stat": "Fly", "modify": "Addition", "amount": 1}])
+    assert interpret_model_message(bad_stat)["ok"] is False
+    assert interpret_model_message(_draft_message(passive="Teleport"))["ok"] is False
+    assert interpret_model_message(_draft_message(tint="gold"))["ok"] is False
+    assert interpret_model_message(_draft_message(portrait="https://example.invalid/a.png"))["ok"] is False
+    both = json.dumps({"type": "questions", "questions": ["Look?"], "character": {"name": "X"}})
+    assert interpret_model_message(both)["ok"] is False
+    assert interpret_model_message('{"type":"draft"}')["ok"] is False
+    assert interpret_model_message("not json")["ok"] is False
+    original = starter_file()
+    with pytest.raises(MegabonkError, match="no character"):
+        apply_model_draft(original, interpret_model_message(_draft_message())["character"], onto_id=999999)
+
+
+def test_model_client_has_no_default_endpoint_and_the_panel_stays_button_only():
+    plugin = ROOT / "examples" / "megabonk-characters" / "plugin"
+    client = (plugin / "AiClient.cs").read_text(encoding="utf-8")
+    window = (plugin / "StudioWindow.cs").read_text(encoding="utf-8")
+    assert "chat/completions" in client
+    assert "MEGABONK_AI_KEY" in client
+    assert "127.0.0.1" not in client
+    assert "api.openai.com" not in client
+    assert "sk-" not in client
+    assert "TextField" not in window and "TextArea" not in window
+    assert "whiteTexture" in window
+    assert "open list" in window
+    assert "base_url" in window
 
 
 def test_doctor_on_an_empty_folder_lists_the_missing_files(tmp_path):

@@ -25,3 +25,4 @@
 - `PlayerRenderer.SetCharacter` threw KeyNotFoundException for ids 1842201002 and 1842201003. `DataManager.GetSkins` is a one-lookup wrapper over `skinData`, and the save config has `characterSkins`. Both are filled for each clone, the same two maps the community loader writes. Vanilla hat lists are not edited. Not run here.
 - Build `5c5af03` failed CS0012 on `AudioClip` because `CharacterData.audioFootsteps` is typed in `UnityEngine.AudioModule`. That interop DLL is now referenced. The plugin was not compiled here.
 - `um megabonk studio` edits the same `characters.json`. That path is tested here.
+- The owner confirmed the installed `e865c46` build runs. Studio 0.2.0 replaces the cycling panel with an opaque list panel and adds an OpenAI-compatible client. No `ai.json` is shipped. No model, key, or hardware was available here, and nothing was sent. `review-model` and the draft validator are covered by tests. The new panel was not launched in the game.
