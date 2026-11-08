@@ -6,10 +6,13 @@ using Assets.Scripts._Data.Hats;
 using Assets.Scripts.Inventory__Items__Pickups.AbilitiesPassive;
 using Assets.Scripts.Inventory__Items__Pickups.Stats;
 using Assets.Scripts.Menu.Shop;
+using Assets.Scripts.Saves___Serialization.Progression.Achievements;
 using Il2CppInterop.Runtime.InteropTypes;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnityEngine;
-using Il2CppList = Il2CppSystem.Collections.Generic.List<StatModifier>;
+// A using alias ignores other usings in this file, so StatModifier must be qualified.
+// Metadata: Assets.Scripts.Inventory__Items__Pickups.Stats.StatModifier.
+using Il2CppList = Il2CppSystem.Collections.Generic.List<Assets.Scripts.Inventory__Items__Pickups.Stats.StatModifier>;
 
 namespace UmMegabonkStudio
 {
